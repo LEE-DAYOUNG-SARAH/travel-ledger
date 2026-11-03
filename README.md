@@ -49,7 +49,14 @@ npm run seed -- --demo        # 데모 지출 13건 포함 (화면 확인용)
 
 ## 배포
 
-### Render (무료) + Turso (무료)  ← 현재 운영 구성
+### Vercel (무료) + Turso (무료)  ← 현재 운영 구성
+
+1. [Turso](https://app.turso.tech)에서 DB 생성 → URL(`libsql://...`)과 토큰 발급
+2. [Vercel](https://vercel.com/new) → GitHub 레포 `travel-ledger` Import (`vercel.json` 자동 적용: 프론트는 정적, `/api/*`는 `api/index.js` 서버리스 함수)
+3. Environment Variables에 `APP_PIN`, `APP_SECRET`(긴 랜덤 문자열), `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` 입력 → Deploy
+4. 잠드는 문제 없음(서버리스). 무료 Hobby 플랜으로 충분.
+
+### Render (무료) + Turso (무료)
 
 1. [Turso](https://turso.tech)에서 DB 생성 → URL(`libsql://...`)과 토큰 발급
 2. Render → **New → Blueprint** → 이 레포 선택 (`render.yaml` 자동 적용)
@@ -106,7 +113,8 @@ GET  /api/rate?from=THB&to=KRW  (open.er-api.com 프록시)
 ## 구조
 
 ```
-server/   index.js(API+정적 서빙)  db.js(SQLite)  seed.js
+api/      index.js  Vercel 서버리스 진입점 (hono/vercel)
+server/   app.js(API 정의, 공유)  index.js(Node 서버: API+정적 서빙)  db.js(libSQL)  seed.js
 src/      pages/ components/ store/(zustand) lib/(api, router, format) types.ts
 dist/     npm run build 산출물 (서버가 서빙)
 ```

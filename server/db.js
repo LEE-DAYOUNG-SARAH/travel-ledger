@@ -1,15 +1,16 @@
 // 저장 레이어: libSQL(Turso) 클라이언트
 //  - TURSO_DATABASE_URL + TURSO_AUTH_TOKEN 이 있으면 Turso 원격 DB
 //  - 없으면 로컬 파일 (file:./data/ledger.sqlite)  → 개발/셀프호스팅용
-import { createClient } from '@libsql/client'
 import { mkdirSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 
 const url = process.env.TURSO_DATABASE_URL || `file:${process.env.DB_PATH || './data/ledger.sqlite'}`
 if (url.startsWith('file:')) mkdirSync(url.replace(/^file:/, '').replace(/\/[^/]*$/, '') || '.', { recursive: true })
 
-export const db = createClient({ url, authToken: process.env.TURSO_AUTH_TOKEN })
 export const isRemote = !url.startsWith('file:')
+// 원격(Turso)은 fetch 기반 web 클라이언트(네이티브 바이너리 불필요 → Vercel 등 서버리스 OK), 로컬 파일은 네이티브 클라이언트
+const { createClient } = isRemote ? await import('@libsql/client/web') : await import('@libsql/client')
+export const db = createClient({ url, authToken: process.env.TURSO_AUTH_TOKEN })
 
 export async function migrate() {
   await db.executeMultiple(`
