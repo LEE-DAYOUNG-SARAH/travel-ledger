@@ -1,7 +1,7 @@
 # 여행 가계부 (travel-ledger)
 
 여행별로 지출을 현지 통화로 기록하고 원화로 환산해 보여주는 반응형 웹앱.
-프론트(React) + API 서버(Node/Hono) + SQLite 파일 DB가 **서버 프로세스 1개**로 뜹니다.
+프론트(React) + API 서버(Node/Hono)가 **서버 프로세스 1개**로 뜨고, DB는 libSQL(SQLite 호환) — 로컬 파일 또는 **Turso** 원격 DB.
 
 - 여행 단위 가계부 (기간 · 통화 · 환율 고정 · 예산)
 - Day 1 / Day 2 … 날짜 탭, 오늘 지출 · 하루 평균 · 남은 예산
@@ -12,7 +12,7 @@
 
 ## 요구사항
 
-- Node.js **22.13 이상** (내장 `node:sqlite` 사용 → 네이티브 빌드 불필요)
+- Node.js **20 이상**
 
 ## 로컬 실행
 
@@ -42,10 +42,20 @@ npm run seed -- --demo        # 데모 지출 13건 포함 (화면 확인용)
 |---|---|---|
 | `APP_PIN` | (없음) | 접속 PIN. 비우면 인증 없이 열림 |
 | `APP_SECRET` | `change-me-<PIN>` | 토큰 서명 키. 긴 랜덤 문자열 권장 |
-| `DB_PATH` | `./data/ledger.sqlite` | SQLite 파일 경로. **볼륨/영구 디스크에 두기** |
+| `TURSO_DATABASE_URL` | (없음) | 설정하면 Turso 원격 DB 사용 (`libsql://...turso.io`) |
+| `TURSO_AUTH_TOKEN` | (없음) | Turso 토큰 |
+| `DB_PATH` | `./data/ledger.sqlite` | Turso 미설정 시 로컬 SQLite 파일 경로. **볼륨/영구 디스크에 두기** |
 | `PORT` | `3000` | 포트 |
 
 ## 배포
+
+### Render (무료) + Turso (무료)  ← 현재 운영 구성
+
+1. [Turso](https://turso.tech)에서 DB 생성 → URL(`libsql://...`)과 토큰 발급
+2. Render → **New → Blueprint** → 이 레포 선택 (`render.yaml` 자동 적용)
+3. 환경변수 `APP_PIN`, `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` 입력 → Deploy
+4. 무료 인스턴스는 15분 유휴 시 잠듦 → [UptimeRobot](https://uptimerobot.com) 등으로 `/healthz`를 5분마다 호출해 깨워두기
+
 
 ### Docker (VPS 등)
 

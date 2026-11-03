@@ -1,0 +1,20 @@
+# Render Blueprint — 대시보드에서 "New → Blueprint" 로 이 레포를 고르면 아래 설정대로 서비스가 생성됩니다.
+services:
+  - type: web
+    name: travel-ledger
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: 22.12.0
+      - key: APP_PIN
+        sync: false          # 대시보드에서 직접 입력
+      - key: APP_SECRET
+        generateValue: true  # Render가 랜덤 생성
+      - key: TURSO_DATABASE_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false

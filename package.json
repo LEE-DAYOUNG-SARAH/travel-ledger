@@ -5,14 +5,15 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:server": "APP_PIN=1234 node --disable-warning=ExperimentalWarning --watch server/index.js",
+    "dev:server": "APP_PIN=1234 node --watch server/index.js",
     "build": "tsc -b && vite build",
-    "start": "node --disable-warning=ExperimentalWarning server/index.js",
+    "start": "node server/index.js",
     "preview": "vite preview",
-    "seed": "node --disable-warning=ExperimentalWarning server/seed.js"
+    "seed": "node server/seed.js"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.6",
+    "@libsql/client": "^0.18.0",
     "dayjs": "^1.11.23",
     "hono": "^4.13.16",
     "react": "^19.3.1",
@@ -32,6 +33,6 @@
     "vite": "^8.3.5"
   },
   "engines": {
-    "node": ">=22.13"
+    "node": ">=20"
   }
 }

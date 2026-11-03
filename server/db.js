@@ -1,17 +1,18 @@
-// SQLite 저장 레이어 (Node 22+ 내장 node:sqlite, 네이티브 빌드 불필요)
-import { DatabaseSync } from 'node:sqlite'
+// 저장 레이어: libSQL(Turso) 클라이언트
+//  - TURSO_DATABASE_URL + TURSO_AUTH_TOKEN 이 있으면 Turso 원격 DB
+//  - 없으면 로컬 파일 (file:./data/ledger.sqlite)  → 개발/셀프호스팅용
+import { createClient } from '@libsql/client'
 import { mkdirSync } from 'node:fs'
-import { dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
 
-const DB_PATH = process.env.DB_PATH || './data/ledger.sqlite'
-mkdirSync(dirname(DB_PATH), { recursive: true })
+const url = process.env.TURSO_DATABASE_URL || `file:${process.env.DB_PATH || './data/ledger.sqlite'}`
+if (url.startsWith('file:')) mkdirSync(url.replace(/^file:/, '').replace(/\/[^/]*$/, '') || '.', { recursive: true })
 
-export const db = new DatabaseSync(DB_PATH)
-db.exec('PRAGMA journal_mode = WAL')
-db.exec('PRAGMA foreign_keys = ON')
+export const db = createClient({ url, authToken: process.env.TURSO_AUTH_TOKEN })
+export const isRemote = !url.startsWith('file:')
 
-db.exec(`
+export async function migrate() {
+  await db.executeMultiple(`
 CREATE TABLE IF NOT EXISTS trips (
   id TEXT PRIMARY KEY,
   title TEXT NOT NULL,
@@ -42,20 +43,22 @@ CREATE TABLE IF NOT EXISTS expenses (
 );
 CREATE INDEX IF NOT EXISTS idx_expenses_trip_spent ON expenses(trip_id, spent_at);
 `)
+}
 
 const now = () => new Date().toISOString()
+const q = (sql, args = []) => db.execute({ sql, args })
 
 // ---------- row <-> object ----------
 const tripFromRow = (r) => r && ({
   id: r.id, title: r.title, countryCode: r.country_code, city: r.city,
   startDate: r.start_date, endDate: r.end_date,
   localCurrency: r.local_currency, baseCurrency: r.base_currency,
-  exchangeRate: r.exchange_rate, budget: r.budget ?? null,
+  exchangeRate: Number(r.exchange_rate), budget: r.budget == null ? null : Number(r.budget),
   createdAt: r.created_at, updatedAt: r.updated_at,
 })
 const expenseFromRow = (r) => r && ({
   id: r.id, tripId: r.trip_id,
-  amountLocal: r.amount_local, amountBase: r.amount_base, currency: r.currency,
+  amountLocal: Number(r.amount_local), amountBase: Number(r.amount_base), currency: r.currency,
   category: r.category, paymentMethod: r.payment_method,
   memo: r.memo, place: r.place, spentAt: r.spent_at,
   createdAt: r.created_at, updatedAt: r.updated_at,
@@ -87,101 +90,83 @@ export function validateExpense(b) {
 }
 
 // ---------- trips ----------
-const qTrips = db.prepare(`
-  SELECT t.*, COALESCE(SUM(e.amount_base),0) AS total_base, COUNT(e.id) AS expense_count
-  FROM trips t LEFT JOIN expenses e ON e.trip_id = t.id
-  GROUP BY t.id ORDER BY t.start_date DESC`)
-const qTrip = db.prepare('SELECT * FROM trips WHERE id = ?')
-const iTrip = db.prepare(`INSERT INTO trips
-  (id,title,country_code,city,start_date,end_date,local_currency,base_currency,exchange_rate,budget,created_at,updated_at)
-  VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
-const uTrip = db.prepare(`UPDATE trips SET title=?,country_code=?,city=?,start_date=?,end_date=?,
-  local_currency=?,base_currency=?,exchange_rate=?,budget=?,updated_at=? WHERE id=?`)
-const dTrip = db.prepare('DELETE FROM trips WHERE id = ?')
-
-export function listTrips() {
-  return qTrips.all().map((r) => ({ ...tripFromRow(r), totalBase: r.total_base, expenseCount: r.expense_count }))
+export async function listTrips() {
+  const r = await q(`SELECT t.*, COALESCE(SUM(e.amount_base),0) AS total_base, COUNT(e.id) AS expense_count
+    FROM trips t LEFT JOIN expenses e ON e.trip_id = t.id GROUP BY t.id ORDER BY t.start_date DESC`)
+  return r.rows.map((row) => ({ ...tripFromRow(row), totalBase: Number(row.total_base), expenseCount: Number(row.expense_count) }))
 }
-export function getTrip(id) { return tripFromRow(qTrip.get(id)) }
-export function createTrip(b) {
+export async function getTrip(id) { return tripFromRow((await q('SELECT * FROM trips WHERE id = ?', [id])).rows[0]) }
+export async function createTrip(b) {
   const id = b.id || randomUUID(); const t = now()
-  iTrip.run(id, b.title.trim(), str(b.countryCode, 'XX'), str(b.city), b.startDate, b.endDate,
-    b.localCurrency, str(b.baseCurrency, 'KRW'), b.exchangeRate, b.budget ?? null, b.createdAt || t, t)
+  await q(`INSERT INTO trips (id,title,country_code,city,start_date,end_date,local_currency,base_currency,exchange_rate,budget,created_at,updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, b.title.trim(), str(b.countryCode, 'XX'), str(b.city), b.startDate, b.endDate, b.localCurrency,
+      str(b.baseCurrency, 'KRW'), b.exchangeRate, b.budget ?? null, b.createdAt || t, t])
   return getTrip(id)
 }
-export function updateTrip(id, b) {
-  const cur = getTrip(id); if (!cur) return null
+export async function updateTrip(id, b) {
+  const cur = await getTrip(id); if (!cur) return null
   const m = { ...cur, ...b }
-  uTrip.run(m.title.trim(), m.countryCode, m.city, m.startDate, m.endDate,
-    m.localCurrency, m.baseCurrency, m.exchangeRate, m.budget ?? null, now(), id)
+  await q(`UPDATE trips SET title=?,country_code=?,city=?,start_date=?,end_date=?,local_currency=?,base_currency=?,exchange_rate=?,budget=?,updated_at=? WHERE id=?`,
+    [m.title.trim(), m.countryCode, m.city, m.startDate, m.endDate, m.localCurrency, m.baseCurrency, m.exchangeRate, m.budget ?? null, now(), id])
   return getTrip(id)
 }
-export function deleteTrip(id) { return dTrip.run(id).changes > 0 }
-
+export async function deleteTrip(id) {
+  await q('DELETE FROM expenses WHERE trip_id = ?', [id]) // FK cascade 미설정 환경 대비
+  return (await q('DELETE FROM trips WHERE id = ?', [id])).rowsAffected > 0
+}
 // 환율 변경 시 전체 재계산 (사용자가 명시적으로 요청할 때만)
-const uRecalc = db.prepare(`UPDATE expenses SET amount_base = CASE
-  WHEN currency = ? THEN amount_local * ? ELSE amount_local END, updated_at = ? WHERE trip_id = ?`)
-export function recalcTrip(id) {
-  const t = getTrip(id); if (!t) return null
-  uRecalc.run(t.localCurrency, t.exchangeRate, now(), id)
+export async function recalcTrip(id) {
+  const t = await getTrip(id); if (!t) return null
+  await q(`UPDATE expenses SET amount_base = CASE WHEN currency = ? THEN amount_local * ? ELSE amount_local END, updated_at = ? WHERE trip_id = ?`,
+    [t.localCurrency, t.exchangeRate, now(), id])
   return listExpenses(id)
 }
 
 // ---------- expenses ----------
-const qExpenses = db.prepare('SELECT * FROM expenses WHERE trip_id = ? ORDER BY spent_at DESC, created_at DESC')
-const qExpense = db.prepare('SELECT * FROM expenses WHERE id = ?')
-const iExpense = db.prepare(`INSERT INTO expenses
-  (id,trip_id,amount_local,amount_base,currency,category,payment_method,memo,place,spent_at,created_at,updated_at)
-  VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
-const uExpense = db.prepare(`UPDATE expenses SET amount_local=?,amount_base=?,currency=?,category=?,
-  payment_method=?,memo=?,place=?,spent_at=?,updated_at=? WHERE id=?`)
-const dExpense = db.prepare('DELETE FROM expenses WHERE id = ?')
-
-export function listExpenses(tripId) { return qExpenses.all(tripId).map(expenseFromRow) }
-export function getExpense(id) { return expenseFromRow(qExpense.get(id)) }
-export function createExpense(b) {
-  if (!getTrip(b.tripId)) return null
+export async function listExpenses(tripId) {
+  return (await q('SELECT * FROM expenses WHERE trip_id = ? ORDER BY spent_at DESC, created_at DESC', [tripId])).rows.map(expenseFromRow)
+}
+export async function getExpense(id) { return expenseFromRow((await q('SELECT * FROM expenses WHERE id = ?', [id])).rows[0]) }
+export async function createExpense(b) {
+  if (!(await getTrip(b.tripId))) return null
   const id = b.id || randomUUID(); const t = now()
-  iExpense.run(id, b.tripId, b.amountLocal, b.amountBase, b.currency, b.category, b.paymentMethod,
-    str(b.memo), str(b.place), b.spentAt, b.createdAt || t, t)
+  await q(`INSERT INTO expenses (id,trip_id,amount_local,amount_base,currency,category,payment_method,memo,place,spent_at,created_at,updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, b.tripId, b.amountLocal, b.amountBase, b.currency, b.category, b.paymentMethod, str(b.memo), str(b.place), b.spentAt, b.createdAt || t, t])
   return getExpense(id)
 }
-export function updateExpense(id, b) {
-  const cur = getExpense(id); if (!cur) return null
+export async function updateExpense(id, b) {
+  const cur = await getExpense(id); if (!cur) return null
   const m = { ...cur, ...b }
-  uExpense.run(m.amountLocal, m.amountBase, m.currency, m.category, m.paymentMethod,
-    str(m.memo), str(m.place), m.spentAt, now(), id)
+  await q(`UPDATE expenses SET amount_local=?,amount_base=?,currency=?,category=?,payment_method=?,memo=?,place=?,spent_at=?,updated_at=? WHERE id=?`,
+    [m.amountLocal, m.amountBase, m.currency, m.category, m.paymentMethod, str(m.memo), str(m.place), m.spentAt, now(), id])
   return getExpense(id)
 }
-export function deleteExpense(id) { return dExpense.run(id).changes > 0 }
+export async function deleteExpense(id) { return (await q('DELETE FROM expenses WHERE id = ?', [id])).rowsAffected > 0 }
 
 // ---------- backup ----------
-export function exportAll() {
+export async function exportAll() {
   return {
     version: 1, exportedAt: now(),
-    trips: db.prepare('SELECT * FROM trips').all().map(tripFromRow),
-    expenses: db.prepare('SELECT * FROM expenses').all().map(expenseFromRow),
+    trips: (await q('SELECT * FROM trips')).rows.map(tripFromRow),
+    expenses: (await q('SELECT * FROM expenses')).rows.map(expenseFromRow),
   }
 }
-export function importAll(payload, { replace = false } = {}) {
+export async function importAll(payload, { replace = false } = {}) {
   const trips = Array.isArray(payload?.trips) ? payload.trips : []
   const expenses = Array.isArray(payload?.expenses) ? payload.expenses : []
-  const tx = db.prepare('BEGIN'); const ok = db.prepare('COMMIT'); const bad = db.prepare('ROLLBACK')
-  tx.run()
-  try {
-    if (replace) { db.exec('DELETE FROM expenses; DELETE FROM trips;') }
-    let tc = 0, ec = 0
-    for (const t of trips) {
-      if (validateTrip(t)) continue
-      if (getTrip(t.id)) updateTrip(t.id, t); else createTrip(t)
-      tc++
-    }
-    for (const e of expenses) {
-      if (validateExpense(e)) continue
-      if (getExpense(e.id)) updateExpense(e.id, e); else if (createExpense(e)) {}
-      ec++
-    }
-    ok.run()
-    return { trips: tc, expenses: ec }
-  } catch (err) { bad.run(); throw err }
+  if (replace) await db.executeMultiple('DELETE FROM expenses; DELETE FROM trips;')
+  let tc = 0, ec = 0
+  for (const t of trips) {
+    if (validateTrip(t)) continue
+    if (await getTrip(t.id)) await updateTrip(t.id, t); else await createTrip(t)
+    tc++
+  }
+  for (const e of expenses) {
+    if (validateExpense(e)) continue
+    if (await getExpense(e.id)) await updateExpense(e.id, e); else if (!(await createExpense(e))) continue
+    ec++
+  }
+  return { trips: tc, expenses: ec }
 }

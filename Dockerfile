@@ -7,4 +7,4 @@ RUN npm run build
 ENV NODE_ENV=production PORT=3000 DB_PATH=/data/ledger.sqlite
 VOLUME ["/data"]
 EXPOSE 3000
-CMD ["node", "--disable-warning=ExperimentalWarning", "server/index.js"]
+CMD ["node", "server/index.js"]
