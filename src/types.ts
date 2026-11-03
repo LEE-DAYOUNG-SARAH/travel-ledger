@@ -27,6 +27,7 @@ export interface Expense {
   currency: string
   category: Category
   paymentMethod: PaymentMethod
+  exchangeRate: number | null // 저장 시점 환율 (1 local = ? base)
   memo: string
   place: string
   spentAt: string // ISO datetime (local)

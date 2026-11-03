@@ -69,7 +69,7 @@ export function TripForm({ open, onClose, initial, onSubmit }:
           <Field label="종료일"><input type="date" className={inputCls} value={end} min={start} onChange={(e) => setEnd(e.target.value)} /></Field>
         </div>
         {!isKRW && (
-          <Field label={`환율  (1 ${c.currency} = ? 원)`} hint="여행 중엔 이 환율로 고정됩니다. 설정에서 나중에 바꿀 수 있어요.">
+          <Field label={`기본 환율  (1 ${c.currency} = ? 원)`} hint="지출은 저장 시점의 실시간 환율로 계산돼요. 이 값은 실시간 조회가 안 될 때만 쓰입니다.">
             <div className="flex gap-2">
               <input type="number" inputMode="decimal" step="0.01" className={inputCls} value={rate} onChange={(e) => setRate(e.target.value)} placeholder="예) 43.2" />
               <Button variant="soft" onClick={fetchRate} disabled={fetching} className="shrink-0 whitespace-nowrap">{fetching ? '…' : '실시간 환율'}</Button>

@@ -35,7 +35,7 @@ if (demo) {
   ]
   for (const [spentAt, amt, category, paymentMethod, memo, place] of rows) {
     await store.createExpense({ tripId: trip.id, amountLocal: amt, amountBase: Math.round(amt * R), currency: 'THB',
-      category, paymentMethod, memo, place, spentAt: spentAt + ':00' })
+      category, paymentMethod, exchangeRate: R, memo, place, spentAt: spentAt + ':00' })
   }
   console.log(`데모 지출 ${rows.length}건 생성`)
 }

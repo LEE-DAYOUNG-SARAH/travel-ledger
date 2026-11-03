@@ -15,7 +15,7 @@ export function TripHeader({ trip, active, onEdit, onDelete }:
         </a>
         <div className="min-w-0 flex-1">
           <h1 className="truncate text-[17px] font-bold leading-tight">{flag} {trip.title}</h1>
-          <p className="text-[11px] text-slate-500">{fmtDate(trip.startDate, 'M.D')} – {fmtDate(trip.endDate, 'M.D')} · 1 {trip.localCurrency} = {trip.exchangeRate}원</p>
+          <p className="truncate text-[11px] text-slate-500">{fmtDate(trip.startDate, "M.D")} – {fmtDate(trip.endDate, "M.D")} · 기본 1 {trip.localCurrency} = {trip.exchangeRate}원</p>
         </div>
         <nav className="inline-flex rounded-xl bg-slate-200/70 p-1">
           <a href={href({ name: 'ledger', tripId: trip.id })} className={`rounded-lg px-3 py-1 text-sm font-semibold ${active === 'ledger' ? 'bg-white shadow-sm' : 'text-slate-500'}`}>가계부</a>

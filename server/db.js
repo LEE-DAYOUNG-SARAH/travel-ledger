@@ -44,6 +44,8 @@ CREATE TABLE IF NOT EXISTS expenses (
 );
 CREATE INDEX IF NOT EXISTS idx_expenses_trip_spent ON expenses(trip_id, spent_at);
 `)
+  // 지출별 환율 컬럼 (기존 DB 호환)
+  try { await db.execute('ALTER TABLE expenses ADD COLUMN exchange_rate REAL') } catch { /* already exists */ }
 }
 
 const now = () => new Date().toISOString()
@@ -61,6 +63,7 @@ const expenseFromRow = (r) => r && ({
   id: r.id, tripId: r.trip_id,
   amountLocal: Number(r.amount_local), amountBase: Number(r.amount_base), currency: r.currency,
   category: r.category, paymentMethod: r.payment_method,
+  exchangeRate: r.exchange_rate == null ? null : Number(r.exchange_rate),
   memo: r.memo, place: r.place, spentAt: r.spent_at,
   createdAt: r.created_at, updatedAt: r.updated_at,
 })
@@ -87,6 +90,7 @@ export function validateExpense(b) {
   if (!CATEGORIES.has(b.category)) return '카테고리가 올바르지 않습니다'
   if (!PAYMENTS.has(b.paymentMethod)) return '결제수단이 올바르지 않습니다'
   if (!str(b.spentAt)) return '날짜가 필요합니다'
+  if (b.exchangeRate != null && (!isNum(b.exchangeRate) || b.exchangeRate <= 0)) return '환율이 올바르지 않습니다'
   return null
 }
 
@@ -119,8 +123,8 @@ export async function deleteTrip(id) {
 // 환율 변경 시 전체 재계산 (사용자가 명시적으로 요청할 때만)
 export async function recalcTrip(id) {
   const t = await getTrip(id); if (!t) return null
-  await q(`UPDATE expenses SET amount_base = CASE WHEN currency = ? THEN amount_local * ? ELSE amount_local END, updated_at = ? WHERE trip_id = ?`,
-    [t.localCurrency, t.exchangeRate, now(), id])
+  await q(`UPDATE expenses SET amount_base = CASE WHEN currency = ? THEN amount_local * ? ELSE amount_local END, exchange_rate = ?, updated_at = ? WHERE trip_id = ?`,
+    [t.localCurrency, t.exchangeRate, t.exchangeRate, now(), id])
   return listExpenses(id)
 }
 
@@ -132,16 +136,16 @@ export async function getExpense(id) { return expenseFromRow((await q('SELECT * 
 export async function createExpense(b) {
   if (!(await getTrip(b.tripId))) return null
   const id = b.id || randomUUID(); const t = now()
-  await q(`INSERT INTO expenses (id,trip_id,amount_local,amount_base,currency,category,payment_method,memo,place,spent_at,created_at,updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [id, b.tripId, b.amountLocal, b.amountBase, b.currency, b.category, b.paymentMethod, str(b.memo), str(b.place), b.spentAt, b.createdAt || t, t])
+  await q(`INSERT INTO expenses (id,trip_id,amount_local,amount_base,currency,category,payment_method,exchange_rate,memo,place,spent_at,created_at,updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, b.tripId, b.amountLocal, b.amountBase, b.currency, b.category, b.paymentMethod, b.exchangeRate ?? null, str(b.memo), str(b.place), b.spentAt, b.createdAt || t, t])
   return getExpense(id)
 }
 export async function updateExpense(id, b) {
   const cur = await getExpense(id); if (!cur) return null
   const m = { ...cur, ...b }
-  await q(`UPDATE expenses SET amount_local=?,amount_base=?,currency=?,category=?,payment_method=?,memo=?,place=?,spent_at=?,updated_at=? WHERE id=?`,
-    [m.amountLocal, m.amountBase, m.currency, m.category, m.paymentMethod, str(m.memo), str(m.place), m.spentAt, now(), id])
+  await q(`UPDATE expenses SET amount_local=?,amount_base=?,currency=?,category=?,payment_method=?,exchange_rate=?,memo=?,place=?,spent_at=?,updated_at=? WHERE id=?`,
+    [m.amountLocal, m.amountBase, m.currency, m.category, m.paymentMethod, m.exchangeRate ?? null, str(m.memo), str(m.place), m.spentAt, now(), id])
   return getExpense(id)
 }
 export async function deleteExpense(id) { return (await q('DELETE FROM expenses WHERE id = ?', [id])).rowsAffected > 0 }

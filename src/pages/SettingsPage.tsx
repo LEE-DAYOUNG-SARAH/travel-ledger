@@ -77,7 +77,7 @@ export function SettingsPage() {
 
       <Card className="mt-4 p-5">
         <h2 className="font-bold">환율 재계산</h2>
-        <p className="mt-1 text-sm text-slate-500">지출은 입력 시점 환율로 저장돼요. 여행 정보에서 환율을 바꾼 뒤, 과거 기록까지 새 환율로 맞추고 싶을 때만 눌러주세요.</p>
+        <p className="mt-1 text-sm text-slate-500">지출은 각각 저장 시점의 환율로 계산돼 있어요. 모든 지출을 여행의 <b>기본 환율</b> 하나로 다시 맞추고 싶을 때만 눌러주세요 (보통 필요 없음).</p>
         <ul className="mt-3 divide-y divide-slate-100">
           {trips.map((t) => (
             <li key={t.id} className="flex items-center justify-between py-2.5 text-sm">

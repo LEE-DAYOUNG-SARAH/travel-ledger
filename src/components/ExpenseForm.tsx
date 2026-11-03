@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import dayjs from 'dayjs'
 import { Button, Field, Sheet, inputCls } from './ui'
 import { CATEGORIES, CATEGORY_META, PAYMENT_META, CURRENCY_SYMBOL, type Category, type Expense, type ExpenseInput, type PaymentMethod, type Trip } from '../types'
 import { fmtMoney, toBase, toLocal } from '../lib/format'
+import { getLiveRate } from '../lib/rate'
 
 const LAST_PAY_KEY = 'ledger.lastPayment'
 
@@ -20,6 +21,17 @@ export function ExpenseForm({ trip, open, onClose, initial, defaultDate, onSubmi
     : `${defaultDate ?? dayjs().format('YYYY-MM-DD')}T${dayjs().format('HH:mm')}`)
   const [saving, setSaving] = useState(false)
   const [confirmDel, setConfirmDel] = useState(false)
+  // 환율: 수정 시엔 저장된 환율, 추가 시엔 실시간 조회 (실패 시 여행 기본 환율)
+  const [rate, setRate] = useState<number>(initial?.exchangeRate ?? trip.exchangeRate)
+  const [rateNote, setRateNote] = useState(initial?.exchangeRate ? '저장 당시 환율' : '환율 조회 중…')
+  const [editRate, setEditRate] = useState(false)
+  const refreshRate = async () => {
+    setRateNote('환율 조회 중…')
+    const r = await getLiveRate(trip.localCurrency, trip.baseCurrency)
+    if (r) { setRate(r.rate); setRateNote(`${r.source === 'live' ? '실시간' : '1시간 내 조회'} 환율 · ${dayjs(r.fetchedAt).format('HH:mm')} 기준`) }
+    else setRateNote('실시간 조회 실패 → 여행 기본 환율 사용')
+  }
+  useEffect(() => { if (!initial?.exchangeRate) refreshRate() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const num = Number(amount.replace(/,/g, ''))
   const valid = Number.isFinite(num) && num > 0
@@ -27,8 +39,8 @@ export function ExpenseForm({ trip, open, onClose, initial, defaultDate, onSubmi
 
   const converted = useMemo(() => {
     if (!valid) return null
-    return isLocal ? toBase(num, trip.exchangeRate, trip.baseCurrency) : toLocal(num, trip.exchangeRate, trip.localCurrency)
-  }, [num, valid, isLocal, trip])
+    return isLocal ? toBase(num, rate, trip.baseCurrency) : toLocal(num, rate, trip.localCurrency)
+  }, [num, valid, isLocal, rate, trip])
 
   const submit = async () => {
     if (!valid) return
@@ -38,6 +50,7 @@ export function ExpenseForm({ trip, open, onClose, initial, defaultDate, onSubmi
     localStorage.setItem(LAST_PAY_KEY, payment)
     const ok = await onSubmit({
       tripId: trip.id, amountLocal, amountBase, currency, category, paymentMethod: payment,
+      exchangeRate: trip.localCurrency === trip.baseCurrency ? 1 : rate,
       memo: memo.trim(), place: place.trim(), spentAt: dayjs(spentAt).format('YYYY-MM-DDTHH:mm:ss'),
     })
     setSaving(false)
@@ -69,8 +82,21 @@ export function ExpenseForm({ trip, open, onClose, initial, defaultDate, onSubmi
                 className={`rounded-md px-3 py-1 text-xs font-bold ${currency === c ? 'bg-brand-500 text-white' : 'text-slate-500'}`}>{c}</button>
             ))}
           </div>
-          <span className="text-xs text-slate-400">1 {trip.localCurrency} = {trip.exchangeRate}원</span>
+          {trip.localCurrency !== trip.baseCurrency && (
+            editRate
+              ? <span className="flex items-center gap-1 text-xs text-slate-500">1 {trip.localCurrency} =
+                  <input autoFocus type="number" inputMode="decimal" step="0.01" value={rate}
+                    onChange={(e) => setRate(Number(e.target.value) || 0)} onBlur={() => { setEditRate(false); setRateNote('직접 입력한 환율') }}
+                    className="tnum w-20 rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-right text-xs outline-none focus:border-brand-400" />원</span>
+              : <button onClick={() => setEditRate(true)} className="text-xs text-slate-500 underline decoration-dotted underline-offset-2">1 {trip.localCurrency} = {rate}원 ✎</button>
+          )}
         </div>
+        {trip.localCurrency !== trip.baseCurrency && (
+          <div className="mt-1 flex items-center justify-end gap-2 text-[11px] text-slate-400">
+            <span>{rateNote}</span>
+            <button onClick={refreshRate} className="rounded-md bg-white px-1.5 py-0.5 font-semibold text-brand-600 shadow-sm">새로고침</button>
+          </div>
+        )}
         <div className="mt-2 flex items-baseline gap-1">
           <span className="text-2xl font-bold text-slate-400">{sym}</span>
           <input autoFocus type="text" inputMode="decimal" value={amount} placeholder="0"
@@ -100,7 +126,7 @@ export function ExpenseForm({ trip, open, onClose, initial, defaultDate, onSubmi
       </div>
 
       {/* 결제수단 + 일시 */}
-      <div className="mt-4 grid grid-cols-[1fr_1.3fr] gap-3">
+      <div className="mt-4 grid grid-cols-2 gap-3">
         <Field label="결제수단">
           <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1">
             {(Object.keys(PAYMENT_META) as PaymentMethod[]).map((p) => (
@@ -112,7 +138,7 @@ export function ExpenseForm({ trip, open, onClose, initial, defaultDate, onSubmi
           </div>
         </Field>
         <Field label="일시">
-          <input type="datetime-local" className={inputCls + ' py-2 px-2.5 text-[15px] sm:text-base'} value={spentAt} onChange={(e) => setSpentAt(e.target.value)} />
+          <input type="datetime-local" className={inputCls + ' py-2 px-2 text-[14px] sm:text-base'} value={spentAt} onChange={(e) => setSpentAt(e.target.value)} />
         </Field>
       </div>
 

@@ -23,7 +23,9 @@ function ExpenseRow({ e, trip, onClick }: { e: Expense; trip: Trip; onClick: () 
       </div>
       <div className="tnum shrink-0 text-right">
         <p className="text-[15px] font-bold">{fmtMoney(e.amountBase, trip.baseCurrency)}</p>
-        {e.currency === trip.localCurrency && <p className="text-xs text-slate-400">{fmtMoney(e.amountLocal, trip.localCurrency)}</p>}
+        {e.currency === trip.localCurrency
+          ? <p className="text-xs text-slate-400">{fmtMoney(e.amountLocal, trip.localCurrency)}{e.exchangeRate ? <span className="ml-1 text-[10px] text-slate-300">@{e.exchangeRate}</span> : null}</p>
+          : <p className="text-xs text-slate-400">{trip.baseCurrency} 결제</p>}
       </div>
     </button>
   )
@@ -81,7 +83,7 @@ export function LedgerPage({ trip }: { trip: Trip }) {
           <Card className="bg-gradient-to-br from-brand-500 to-brand-700 p-5 text-white">
             <p className="text-xs font-medium text-white/75">총 지출</p>
             <p className="tnum mt-0.5 text-3xl font-extrabold tracking-tight">{fmtMoney(total, trip.baseCurrency)}</p>
-            <p className="tnum mt-0.5 text-sm text-white/80">{fmtMoney(Math.round(total / trip.exchangeRate), trip.localCurrency)} · {all.length}건</p>
+            <p className="tnum mt-0.5 text-sm text-white/80">≈ {fmtMoney(Math.round(all.reduce((s, e) => s + (e.currency === trip.localCurrency ? e.amountLocal : e.amountBase / (e.exchangeRate || trip.exchangeRate)), 0)), trip.localCurrency)} · {all.length}건</p>
             <div className="mt-4 grid grid-cols-2 gap-3 border-t border-white/15 pt-3 text-sm">
               <div><p className="text-xs text-white/70">오늘</p><p className="tnum font-bold">{fmtMoney(todayTotal, trip.baseCurrency)}</p></div>
               <div><p className="text-xs text-white/70">하루 평균</p><p className="tnum font-bold">{fmtMoney(total / elapsedDays, trip.baseCurrency)}</p></div>

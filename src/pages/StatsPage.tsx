@@ -16,8 +16,8 @@ export function StatsPage({ trip }: { trip: Trip }) {
 
   const all = list ?? []
   const cur = mode === 'base' ? trip.baseCurrency : trip.localCurrency
-  const amt = (e: { amountBase: number; amountLocal: number; currency: string }) =>
-    mode === 'base' ? e.amountBase : (e.currency === trip.localCurrency ? e.amountLocal : e.amountBase / trip.exchangeRate)
+  const amt = (e: { amountBase: number; amountLocal: number; currency: string; exchangeRate: number | null }) =>
+    mode === 'base' ? e.amountBase : (e.currency === trip.localCurrency ? e.amountLocal : e.amountBase / (e.exchangeRate || trip.exchangeRate))
   const total = all.reduce((s, e) => s + amt(e), 0)
 
   const byCat = useMemo(() => CATEGORIES.map((c) => ({
