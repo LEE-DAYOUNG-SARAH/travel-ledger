@@ -22,10 +22,7 @@ function ExpenseRow({ e, trip, onClick }: { e: Expense; trip: Trip; onClick: () 
         </p>
       </div>
       <div className="tnum shrink-0 text-right">
-        <p className="text-[15px] font-bold">{fmtMoney(e.amountBase, trip.baseCurrency)}</p>
-        {e.currency === trip.localCurrency
-          ? <p className="text-xs text-slate-400">{fmtMoney(e.amountLocal, trip.localCurrency)}{e.exchangeRate ? <span className="ml-1 text-[10px] text-slate-300">@{e.exchangeRate}</span> : null}</p>
-          : <p className="text-xs text-slate-400">{trip.baseCurrency} 결제</p>}
+        <p className="text-[15px] font-bold">{e.currency === trip.localCurrency ? fmtMoney(e.amountLocal, trip.localCurrency) : fmtMoney(e.amountBase, trip.baseCurrency)}</p>
       </div>
     </button>
   )
@@ -50,7 +47,7 @@ export function LedgerPage({ trip }: { trip: Trip }) {
     box.scrollTo({ left: box.scrollLeft + (r.left - b.left) - b.width / 2 + r.width / 2, behavior: 'auto' })
   }, [selected, list])
 
-  const all = list ?? []
+  const all = useMemo(() => [...(list ?? [])].sort((a, b) => a.createdAt.localeCompare(b.createdAt)), [list])
   const total = all.reduce((s, e) => s + e.amountBase, 0)
   const todayTotal = all.filter((e) => dateKey(e.spentAt) === todayKey()).reduce((s, e) => s + e.amountBase, 0)
   const visible = selected === 'ALL' ? all : all.filter((e) => dateKey(e.spentAt) === selected)
@@ -64,7 +61,7 @@ export function LedgerPage({ trip }: { trip: Trip }) {
   const groups = useMemo(() => {
     const g = new Map<string, Expense[]>()
     for (const e of visible) { const k = dateKey(e.spentAt); g.set(k, [...(g.get(k) ?? []), e]) }
-    return [...g.entries()].sort((a, b) => (a[0] < b[0] ? 1 : -1))
+    return [...g.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1))
   }, [visible])
 
   const elapsedDays = status === 'done' ? days.length : Math.max(1, Math.min(days.length, dayNumber(trip.startDate, todayKey())))
