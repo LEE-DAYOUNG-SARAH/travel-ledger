@@ -134,19 +134,21 @@ export async function listExpenses(tripId) {
 }
 export async function getExpense(id) { return expenseFromRow((await q('SELECT * FROM expenses WHERE id = ?', [id])).rows[0]) }
 export async function createExpense(b) {
-  if (!(await getTrip(b.tripId))) return null
   const id = b.id || randomUUID(); const t = now()
-  await q(`INSERT INTO expenses (id,trip_id,amount_local,amount_base,currency,category,payment_method,exchange_rate,memo,place,spent_at,created_at,updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [id, b.tripId, b.amountLocal, b.amountBase, b.currency, b.category, b.paymentMethod, b.exchangeRate ?? null, str(b.memo), str(b.place), b.spentAt, b.createdAt || t, t])
-  return getExpense(id)
+  // 여행 존재 확인을 INSERT … SELECT 로 합쳐 왕복 1회
+  const r = await q(`INSERT INTO expenses (id,trip_id,amount_local,amount_base,currency,category,payment_method,exchange_rate,memo,place,spent_at,created_at,updated_at)
+    SELECT ?,?,?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM trips WHERE id = ?)`,
+    [id, b.tripId, b.amountLocal, b.amountBase, b.currency, b.category, b.paymentMethod, b.exchangeRate ?? null, str(b.memo), str(b.place), b.spentAt, b.createdAt || t, t, b.tripId])
+  if (!r.rowsAffected) return null
+  return { id, tripId: b.tripId, amountLocal: b.amountLocal, amountBase: b.amountBase, currency: b.currency, category: b.category,
+    paymentMethod: b.paymentMethod, exchangeRate: b.exchangeRate ?? null, memo: str(b.memo), place: str(b.place), spentAt: b.spentAt, createdAt: b.createdAt || t, updatedAt: t }
 }
-export async function updateExpense(id, b) {
-  const cur = await getExpense(id); if (!cur) return null
-  const m = { ...cur, ...b }
+export async function updateExpense(id, b, cur) {
+  cur = cur || await getExpense(id); if (!cur) return null
+  const m = { ...cur, ...b, updatedAt: now() }
   await q(`UPDATE expenses SET amount_local=?,amount_base=?,currency=?,category=?,payment_method=?,exchange_rate=?,memo=?,place=?,spent_at=?,updated_at=? WHERE id=?`,
-    [m.amountLocal, m.amountBase, m.currency, m.category, m.paymentMethod, m.exchangeRate ?? null, str(m.memo), str(m.place), m.spentAt, now(), id])
-  return getExpense(id)
+    [m.amountLocal, m.amountBase, m.currency, m.category, m.paymentMethod, m.exchangeRate ?? null, str(m.memo), str(m.place), m.spentAt, m.updatedAt, id])
+  return { ...m, memo: str(m.memo), place: str(m.place) }
 }
 export async function deleteExpense(id) { return (await q('DELETE FROM expenses WHERE id = ?', [id])).rowsAffected > 0 }
 

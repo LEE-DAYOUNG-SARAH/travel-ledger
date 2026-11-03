@@ -103,33 +103,50 @@ export const useStore = create<State>((set, get) => {
       catch (e) { handle(e) }
     },
     async createExpense(e) {
-      try {
-        const saved = await api.createExpense(e)
-        set((s) => ({ expenses: { ...s.expenses, [e.tripId]: [saved, ...(s.expenses[e.tripId] ?? [])] } }))
-        bumpTripTotal(e.tripId, saved.amountBase, 1)
-        return true
-      } catch (err) { handle(err); return false }
+      // 낙관적 추가: 즉시 화면에 반영 → 서버 응답으로 교체, 실패 시 제거
+      const tempId = 'tmp-' + Date.now()
+      const now = new Date().toISOString()
+      const temp: Expense = { ...e, id: tempId, createdAt: now, updatedAt: now }
+      set((s) => ({ expenses: { ...s.expenses, [e.tripId]: [temp, ...(s.expenses[e.tripId] ?? [])] } }))
+      bumpTripTotal(e.tripId, e.amountBase, 1)
+      api.createExpense(e).then((saved) => {
+        set((s) => ({ expenses: { ...s.expenses, [e.tripId]: (s.expenses[e.tripId] ?? []).map((x) => (x.id === tempId ? saved : x)) } }))
+      }).catch((err) => {
+        set((s) => ({ expenses: { ...s.expenses, [e.tripId]: (s.expenses[e.tripId] ?? []).filter((x) => x.id !== tempId) } }))
+        bumpTripTotal(e.tripId, -e.amountBase, -1)
+        handle(err); get().toast('저장 실패 — 다시 시도해주세요', 'err')
+      })
+      return true
     },
     async updateExpense(id, e) {
-      try {
-        const saved = await api.updateExpense(id, e)
-        set((s) => {
-          const list = s.expenses[saved.tripId] ?? []
-          const prev = list.find((x) => x.id === id)
-          if (prev) bumpTripTotal(saved.tripId, saved.amountBase - prev.amountBase, 0)
-          return { expenses: { ...s.expenses, [saved.tripId]: list.map((x) => (x.id === id ? saved : x)) } }
-        })
-        return true
-      } catch (err) { handle(err); return false }
+      const tripId = e.tripId ?? Object.values(get().expenses).flat().find((x) => x.id === id)?.tripId
+      if (!tripId) return false
+      const list = get().expenses[tripId] ?? []
+      const prev = list.find((x) => x.id === id); if (!prev) return false
+      if (prev.id.startsWith('tmp-')) { get().toast('저장 중이에요, 잠시 후 수정해주세요', 'err'); return false }
+      const next: Expense = { ...prev, ...e, updatedAt: new Date().toISOString() }
+      set((s) => ({ expenses: { ...s.expenses, [tripId]: (s.expenses[tripId] ?? []).map((x) => (x.id === id ? next : x)) } }))
+      bumpTripTotal(tripId, next.amountBase - prev.amountBase, 0)
+      api.updateExpense(id, e).then((saved) => {
+        set((s) => ({ expenses: { ...s.expenses, [tripId]: (s.expenses[tripId] ?? []).map((x) => (x.id === id ? saved : x)) } }))
+      }).catch((err) => {
+        set((s) => ({ expenses: { ...s.expenses, [tripId]: (s.expenses[tripId] ?? []).map((x) => (x.id === id ? prev : x)) } }))
+        bumpTripTotal(tripId, prev.amountBase - next.amountBase, 0)
+        handle(err); get().toast('수정 실패 — 되돌렸어요', 'err')
+      })
+      return true
     },
     async deleteExpense(tripId, id) {
-      try {
-        const prev = (get().expenses[tripId] ?? []).find((x) => x.id === id)
-        await api.deleteExpense(id)
-        set((s) => ({ expenses: { ...s.expenses, [tripId]: (s.expenses[tripId] ?? []).filter((x) => x.id !== id) } }))
-        if (prev) bumpTripTotal(tripId, -prev.amountBase, -1)
-        get().toast('삭제했어요')
-      } catch (e) { handle(e) }
+      const prev = (get().expenses[tripId] ?? []).find((x) => x.id === id); if (!prev) return
+      if (prev.id.startsWith('tmp-')) return
+      set((s) => ({ expenses: { ...s.expenses, [tripId]: (s.expenses[tripId] ?? []).filter((x) => x.id !== id) } }))
+      bumpTripTotal(tripId, -prev.amountBase, -1)
+      get().toast('삭제했어요')
+      api.deleteExpense(id).catch((err) => {
+        set((s) => ({ expenses: { ...s.expenses, [tripId]: [prev, ...(s.expenses[tripId] ?? [])] } }))
+        bumpTripTotal(tripId, prev.amountBase, 1)
+        handle(err); get().toast('삭제 실패 — 되돌렸어요', 'err')
+      })
     },
 
     toast(msg, kind = 'ok') {

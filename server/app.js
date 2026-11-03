@@ -66,7 +66,7 @@ api.put('/expenses/:id', async (c) => {
   const cur = await store.getExpense(c.req.param('id')); if (!cur) return c.json({ error: 'not found' }, 404)
   const b = { ...cur, ...(await c.req.json()) }
   const err = store.validateExpense(b); if (err) return c.json({ error: err }, 400)
-  return c.json(await store.updateExpense(cur.id, b))
+  return c.json(await store.updateExpense(cur.id, b, cur))
 })
 api.delete('/expenses/:id', async (c) => c.json({ ok: await store.deleteExpense(c.req.param('id')) }))
 
