@@ -22,7 +22,17 @@ function ExpenseRow({ e, trip, onClick }: { e: Expense; trip: Trip; onClick: () 
         </p>
       </div>
       <div className="tnum shrink-0 text-right">
-        <p className="text-[15px] font-bold">{e.currency === trip.localCurrency ? fmtMoney(e.amountLocal, trip.localCurrency) : fmtMoney(e.amountBase, trip.baseCurrency)}</p>
+        {e.currency === trip.localCurrency ? (
+          <>
+            <p className="text-[15px] font-bold">{fmtMoney(e.amountLocal, trip.localCurrency)}</p>
+            <p className="text-xs text-slate-400">≈ {fmtMoney(e.amountBase, trip.baseCurrency)}</p>
+          </>
+        ) : (
+          <>
+            <p className="text-[15px] font-bold">{fmtMoney(e.amountBase, trip.baseCurrency)}</p>
+            <p className="text-xs text-slate-400">≈ {fmtMoney(e.amountLocal, trip.localCurrency)}</p>
+          </>
+        )}
       </div>
     </button>
   )
