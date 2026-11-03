@@ -1,0 +1,37 @@
+{
+  "name": "travel-ledger",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:server": "APP_PIN=1234 node --disable-warning=ExperimentalWarning --watch server/index.js",
+    "build": "tsc -b && vite build",
+    "start": "node --disable-warning=ExperimentalWarning server/index.js",
+    "preview": "vite preview",
+    "seed": "node --disable-warning=ExperimentalWarning server/seed.js"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.6",
+    "dayjs": "^1.11.23",
+    "hono": "^4.13.16",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "recharts": "^3.10.1",
+    "zustand": "^5.0.16"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.4",
+    "@types/node": "^24.19.2",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "oxlint": "^1.89.0",
+    "tailwindcss": "^4.3.4",
+    "typescript": "~7.0.2",
+    "vite": "^8.3.5"
+  },
+  "engines": {
+    "node": ">=22.13"
+  }
+}

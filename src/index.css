@@ -1,0 +1,50 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, Roboto, "Helvetica Neue", "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
+  --color-brand-50: #eef5ff;
+  --color-brand-100: #d9e8ff;
+  --color-brand-200: #bcd6ff;
+  --color-brand-300: #8ebcff;
+  --color-brand-400: #5a9aff;
+  --color-brand-500: #368fff;
+  --color-brand-600: #1f6ff0;
+  --color-brand-700: #185add;
+  --color-brand-800: #1a4ab3;
+  --color-brand-900: #1b418d;
+}
+
+html, body, #root { height: 100%; }
+body {
+  @apply bg-slate-100 text-slate-900 antialiased;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+/* 숫자 폭 고정 → 금액 정렬 */
+.tnum { font-variant-numeric: tabular-nums; }
+
+/* 스크롤바 숨김 (가로 날짜 탭) */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* safe-area */
+.pb-safe { padding-bottom: max(env(safe-area-inset-bottom), 0.75rem); }
+.pt-safe { padding-top: env(safe-area-inset-top); }
+.pt-safe-4 { padding-top: calc(1rem + env(safe-area-inset-top)); }
+
+/* iOS Safari: 가로 회전/홈화면 모드에서 글자 자동 확대 방지 */
+html { -webkit-text-size-adjust: 100%; }
+/* iOS 날짜/시간 입력: 기본 스타일 제거 후 높이·정렬 통일 */
+input[type="date"], input[type="datetime-local"], select {
+  -webkit-appearance: none; appearance: none; min-height: 46px; line-height: 1.25;
+}
+input[type="date"]::-webkit-date-and-time-value, input[type="datetime-local"]::-webkit-date-and-time-value { text-align: left; }
+select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Cpath d='M4 6l4 4 4-4'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 36px; }
+/* 모바일 시트: 100dvh 미지원 구형 대비 */
+@supports not (height: 100dvh) { .max-h-\[92dvh\] { max-height: 92vh; } }
+
+@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+.animate-slide-up { animation: slideUp .22s cubic-bezier(.2,.8,.2,1); }
+@keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+.animate-fade-in { animation: fadeIn .18s ease-out; }
