@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useStore } from '../store/useStore'
 
 export function Button({ children, variant = 'primary', className = '', ...rest }:
@@ -33,33 +33,60 @@ export function Field({ label, children, hint }: { label: string; children: Reac
 export const inputCls = 'w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-base outline-none appearance-none focus:border-brand-400 focus:bg-white focus:ring-2 focus:ring-brand-100 placeholder:text-slate-400'
 
 /** 모바일: 바텀시트 / 데스크톱: 중앙 모달
- *  iOS 키보드 대응: 시트를 window 높이가 아니라 visualViewport(실제 보이는 영역) 기준으로 배치 →
- *  키보드가 올라와도 시트가 밀려 올라가지 않고, 안쪽 영역만 스크롤됨 */
+ *  iOS 키보드 대응:
+ *   1) 시트가 열리면 문서 스크롤을 완전히 잠금 (body position:fixed) → 사파리가 페이지를 멋대로 밀어 올리지 못함
+ *   2) 시트 높이/위치를 visualViewport(키보드를 뺀 실제 보이는 영역)에 맞춤
+ *   3) 입력칸 포커스 시 시트 "안쪽" 스크롤만 조정해서 칸이 키보드 위에 오게 함 */
 export function Sheet({ open, onClose, title, children, footer }:
   { open: boolean; onClose: () => void; title?: string; children: ReactNode; footer?: ReactNode }) {
   const [vv, setVv] = useState<{ h: number; top: number } | null>(null)
+  const bodyRef = useRef<HTMLDivElement>(null)
+
+  // 포커스된 입력칸을 시트 안쪽 스크롤로만 보이게 (window 스크롤 X)
+  const revealActive = () => {
+    const box = bodyRef.current; const el = document.activeElement as HTMLElement | null
+    if (!box || !el || !box.contains(el) || !el.matches('input, select, textarea')) return
+    const b = box.getBoundingClientRect(), r = el.getBoundingClientRect()
+    const pad = 16
+    if (r.bottom > b.bottom - pad) box.scrollTop += r.bottom - b.bottom + pad
+    else if (r.top < b.top + pad) box.scrollTop -= b.top + pad - r.top
+  }
+
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
     addEventListener('keydown', onKey)
-    document.body.style.overflow = 'hidden'
+    // 문서 스크롤 잠금
+    const scrollY = window.scrollY
+    const b = document.body.style
+    const prev = { position: b.position, top: b.top, left: b.left, right: b.right, width: b.width, overflow: b.overflow }
+    b.position = 'fixed'; b.top = `-${scrollY}px`; b.left = '0'; b.right = '0'; b.width = '100%'; b.overflow = 'hidden'
+    // visualViewport 추적
     const v = window.visualViewport
-    const sync = () => v && setVv({ h: v.height, top: v.offsetTop + (window.scrollY || 0) })
+    let raf = 0
+    const sync = () => {
+      if (!v) return
+      cancelAnimationFrame(raf)
+      raf = requestAnimationFrame(() => { setVv({ h: Math.round(v.height), top: Math.round(v.offsetTop) }); setTimeout(revealActive, 50) })
+    }
     sync(); v?.addEventListener('resize', sync); v?.addEventListener('scroll', sync)
     return () => {
-      removeEventListener('keydown', onKey); document.body.style.overflow = ''
-      v?.removeEventListener('resize', sync); v?.removeEventListener('scroll', sync)
+      removeEventListener('keydown', onKey)
+      v?.removeEventListener('resize', sync); v?.removeEventListener('scroll', sync); cancelAnimationFrame(raf)
+      Object.assign(b, prev); window.scrollTo(0, scrollY)
     }
   }, [open, onClose])
   if (!open) return null
-  // 입력창에 포커스되면 키보드 위로 보이게 안쪽 스크롤
+
   const onFocus = (e: React.FocusEvent) => {
     const el = e.target as HTMLElement
-    if (el.matches('input, select, textarea')) setTimeout(() => el.scrollIntoView({ block: 'center', behavior: 'smooth' }), 250)
+    if (!el.matches('input, select, textarea')) return
+    // 키보드 애니메이션(약 250ms) 뒤 두 번 보정
+    setTimeout(revealActive, 300); setTimeout(revealActive, 600)
   }
   return (
-    <div className="fixed inset-x-0 z-50 flex items-end justify-center sm:items-center"
-      style={vv ? { top: vv.top, height: vv.h } : { top: 0, height: '100dvh' }}>
+    <div className="fixed inset-x-0 top-0 z-50 flex items-end justify-center will-change-transform sm:items-center"
+      style={{ height: vv ? vv.h : '100dvh', transform: vv ? `translateY(${vv.top}px)` : undefined }}>
       <div className="absolute inset-0 bg-slate-900/40 animate-fade-in" onClick={onClose} />
       <div className="relative flex w-full flex-col rounded-t-3xl bg-white shadow-2xl animate-slide-up sm:max-w-lg sm:rounded-3xl"
         style={{ maxHeight: vv ? Math.round(vv.h * 0.94) : '92dvh' }}>
@@ -72,7 +99,7 @@ export function Sheet({ open, onClose, title, children, footer }:
             </button>
           </div>
         )}
-        <div onFocusCapture={onFocus} className={`min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-4 ${footer ? '' : 'pb-safe'}`}>{children}</div>
+        <div ref={bodyRef} onFocusCapture={onFocus} className={`min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-4 ${footer ? '' : 'pb-safe'}`}>{children}</div>
         {footer && <div className="border-t border-slate-100 px-5 py-3 pb-safe">{footer}</div>}
       </div>
     </div>
