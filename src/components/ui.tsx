@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useStore } from '../store/useStore'
 
 export function Button({ children, variant = 'primary', className = '', ...rest }:
@@ -32,21 +32,37 @@ export function Field({ label, children, hint }: { label: string; children: Reac
 }
 export const inputCls = 'w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-base outline-none appearance-none focus:border-brand-400 focus:bg-white focus:ring-2 focus:ring-brand-100 placeholder:text-slate-400'
 
-/** 모바일: 바텀시트 / 데스크톱: 중앙 모달 */
+/** 모바일: 바텀시트 / 데스크톱: 중앙 모달
+ *  iOS 키보드 대응: 시트를 window 높이가 아니라 visualViewport(실제 보이는 영역) 기준으로 배치 →
+ *  키보드가 올라와도 시트가 밀려 올라가지 않고, 안쪽 영역만 스크롤됨 */
 export function Sheet({ open, onClose, title, children, footer }:
   { open: boolean; onClose: () => void; title?: string; children: ReactNode; footer?: ReactNode }) {
+  const [vv, setVv] = useState<{ h: number; top: number } | null>(null)
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
     addEventListener('keydown', onKey)
     document.body.style.overflow = 'hidden'
-    return () => { removeEventListener('keydown', onKey); document.body.style.overflow = '' }
+    const v = window.visualViewport
+    const sync = () => v && setVv({ h: v.height, top: v.offsetTop + (window.scrollY || 0) })
+    sync(); v?.addEventListener('resize', sync); v?.addEventListener('scroll', sync)
+    return () => {
+      removeEventListener('keydown', onKey); document.body.style.overflow = ''
+      v?.removeEventListener('resize', sync); v?.removeEventListener('scroll', sync)
+    }
   }, [open, onClose])
   if (!open) return null
+  // 입력창에 포커스되면 키보드 위로 보이게 안쪽 스크롤
+  const onFocus = (e: React.FocusEvent) => {
+    const el = e.target as HTMLElement
+    if (el.matches('input, select, textarea')) setTimeout(() => el.scrollIntoView({ block: 'center', behavior: 'smooth' }), 250)
+  }
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
+    <div className="fixed inset-x-0 z-50 flex items-end justify-center sm:items-center"
+      style={vv ? { top: vv.top, height: vv.h } : { top: 0, height: '100dvh' }}>
       <div className="absolute inset-0 bg-slate-900/40 animate-fade-in" onClick={onClose} />
-      <div className="relative flex max-h-[92dvh] w-full flex-col rounded-t-3xl bg-white shadow-2xl animate-slide-up sm:max-w-lg sm:rounded-3xl">
+      <div className="relative flex w-full flex-col rounded-t-3xl bg-white shadow-2xl animate-slide-up sm:max-w-lg sm:rounded-3xl"
+        style={{ maxHeight: vv ? Math.round(vv.h * 0.94) : '92dvh' }}>
         <div className="mx-auto mt-2.5 h-1 w-10 rounded-full bg-slate-200 sm:hidden" />
         {title && (
           <div className="flex items-center justify-between px-5 pt-4 pb-2">
@@ -56,12 +72,15 @@ export function Sheet({ open, onClose, title, children, footer }:
             </button>
           </div>
         )}
-        <div className={`min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-4 ${footer ? "" : "pb-safe"}`}>{children}</div>
+        <div onFocusCapture={onFocus} className={`min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-4 ${footer ? '' : 'pb-safe'}`}>{children}</div>
         {footer && <div className="border-t border-slate-100 px-5 py-3 pb-safe">{footer}</div>}
       </div>
     </div>
   )
 }
+
+/** 터치 기기(폰)에서는 자동 포커스로 키보드가 바로 튀어나오지 않게 */
+export const autoFocusOnDesktop = typeof window !== 'undefined' && !window.matchMedia('(pointer: coarse)').matches
 
 export function Toasts() {
   const toasts = useStore((s) => s.toasts)

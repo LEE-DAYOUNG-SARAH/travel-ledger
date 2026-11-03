@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Button, Field, Sheet, inputCls } from './ui'
+import { Button, Field, Sheet, inputCls, autoFocusOnDesktop } from './ui'
 import { COUNTRIES, type Trip, type TripInput } from '../types'
 import { api } from '../lib/api'
 import { todayKey } from '../lib/format'
@@ -52,7 +52,7 @@ export function TripForm({ open, onClose, initial, onSubmit }:
       footer={<Button className="w-full py-3" onClick={submit} disabled={saving}>{initial ? '저장' : '여행 만들기'}</Button>}>
       <div className="space-y-4 pt-1">
         <Field label="여행 제목">
-          <input className={inputCls} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="예) 치앙마이 한 달 살기" autoFocus />
+          <input className={inputCls} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="예) 치앙마이 한 달 살기" autoFocus={autoFocusOnDesktop} />
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="국가 / 통화">

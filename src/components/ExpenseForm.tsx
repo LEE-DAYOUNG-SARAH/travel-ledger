@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import dayjs from 'dayjs'
-import { Button, Field, Sheet, inputCls } from './ui'
+import { Button, Field, Sheet, inputCls, autoFocusOnDesktop } from './ui'
 import { CATEGORIES, CATEGORY_META, PAYMENT_META, CURRENCY_SYMBOL, type Category, type Expense, type ExpenseInput, type PaymentMethod, type Trip } from '../types'
 import { fmtMoney, toBase, toLocal } from '../lib/format'
 import { getLiveRate } from '../lib/rate'
@@ -99,7 +99,7 @@ export function ExpenseForm({ trip, open, onClose, initial, defaultDate, onSubmi
         )}
         <div className="mt-2 flex items-baseline gap-1">
           <span className="text-2xl font-bold text-slate-400">{sym}</span>
-          <input autoFocus type="text" inputMode="decimal" value={amount} placeholder="0"
+          <input autoFocus={autoFocusOnDesktop} type="text" inputMode="decimal" value={amount} placeholder="0"
             onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ''))}
             className="tnum w-full bg-transparent text-4xl font-extrabold tracking-tight outline-none placeholder:text-slate-300" />
         </div>
