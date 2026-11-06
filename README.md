@@ -1,124 +1,172 @@
-# 여행 가계부 (travel-ledger)
+# 여행 가계부 — travel-ledger
 
-여행별로 지출을 현지 통화로 기록하고 원화로 환산해 보여주는 반응형 웹앱.
-프론트(React) + API 서버(Node/Hono)가 **서버 프로세스 1개**로 뜨고, DB는 libSQL(SQLite 호환) — 로컬 파일 또는 **Turso** 원격 DB.
+여행 중 지출을 **현지 통화 또는 원화로** 기록하고, **저장 시점의 실시간 환율**로 환산해 한눈에 보여주는 반응형 웹앱입니다.
+트리플(Triple) 앱의 가계부 UX를 참고해 만들었고, 트리플 서비스 종료(2025.11) 이후 직접 쓰려고 시작한 개인 프로젝트입니다.
 
-- 여행 단위 가계부 (기간 · 통화 · 환율 고정 · 예산)
-- Day 1 / Day 2 … 날짜 탭, 오늘 지출 · 하루 평균 · 남은 예산
-- 지출 입력: 현지통화 ↔ 원화 토글, 카테고리 6종, 현금/카드, 메모/장소
-- 통계: 카테고리 도넛, 결제수단 비율, 일별 막대(일 예산선)
-- 백업: JSON 내려받기/복원, CSV 내려받기, 환율 재계산
-- PIN 1개로 접근 제한 (환경변수)
+**스택** React 19 · TypeScript · Vite · Tailwind CSS 4 · Zustand · Recharts / Hono · libSQL(Turso) / Vercel Serverless
 
-## 요구사항
+| 여행 목록 | 가계부 | 지출 추가 | 통계 |
+|---|---|---|---|
+| ![](docs/screenshots/m-trips.png) | ![](docs/screenshots/m-ledger.png) | ![](docs/screenshots/m-add.png) | ![](docs/screenshots/m-stats.png) |
 
-- Node.js **20 이상**
+<details>
+<summary>데스크톱 레이아웃</summary>
+
+![](docs/screenshots/d-ledger.png)
+</details>
+
+## 기능
+
+- **여행 단위 가계부** — 국가/통화, 기간, 예산. 여행 중이면 `Day N / 전체일수`, 예정이면 `D-n` 표시
+- **지출 기록** — 금액은 현지 통화(฿) 또는 원화(₩) 중 선택해 입력. 카테고리 6종(식비·교통·숙박·관광·기타·쇼핑), 현금/카드, 일시, 메모, 장소
+- **환율** — 지출 추가 시 실시간 환율을 조회해 **그 지출에 함께 저장**하고 환산. 나중에 환율이 바뀌어도 과거 기록은 그대로. 직접 수정 가능하며, 조회 실패 시 여행에 설정한 기본 환율로 대체
+- **날짜 탭** — `전체 | Day 1 | Day 2 …` 가로 탭, 오늘 탭 자동 포커스. 내역은 저장 순서대로, 각 줄에 저장 통화 + 반대 통화 환산값
+- **요약 카드** — 총 지출, 오늘 지출, 하루 평균, 남은 예산과 "남은 n일 · 하루 ₩x 가능"
+- **통계** — 카테고리 도넛 + 비율 리스트, 결제수단 비율(환전 계획용), 일별 막대와 일 예산선. 원화/현지통화 토글
+- **백업** — JSON 내려받기/복원(병합 또는 교체), CSV 내려받기(엑셀·시트용), 여행 기본 환율로 일괄 재계산
+- **접근 제한** — PIN 1개(환경변수). 토큰은 HMAC 서명이라 서버에 세션 저장 없음
+- **모바일 대응** — iPhone Safari 기준으로 검증: 입력 시 자동 확대 방지, 노치/홈 인디케이터 safe-area, 키보드가 올라와도 바텀시트가 밀리지 않도록 visualViewport 기준 배치. 홈 화면에 추가하면 앱처럼 실행
+
+## 아키텍처
+
+```mermaid
+flowchart LR
+  subgraph Client["브라우저 (React SPA)"]
+    UI[pages / components] --> Store[Zustand store] --> API[lib/api.ts]
+  end
+  subgraph Vercel
+    Static["정적 파일 (dist/)"]
+    Fn["api/index.js<br/>Hono (hono/vercel)"]
+  end
+  Turso[("Turso<br/>libSQL · Singapore")]
+  Rate["open.er-api.com<br/>환율"]
+  API -- "/api/*" --> Fn
+  Client -- "/" --> Static
+  Fn --> Turso
+  Fn -- "/api/rate" --> Rate
+```
+
+- **프론트**는 정적 파일, **API**는 서버리스 함수 하나(`api/index.js`). 같은 Hono 앱(`server/app.js`)을 Node 서버(`server/index.js`)에서도 그대로 띄울 수 있어 로컬·Docker·VPS 배포도 동일 코드
+- **DB**는 libSQL. `TURSO_DATABASE_URL`이 있으면 Turso 원격(fetch 기반 `@libsql/client/web` → 네이티브 바이너리 없이 서버리스 호환), 없으면 로컬 SQLite 파일
+- 함수와 DB를 모두 싱가포르 리전에 두고, 지출 저장은 `INSERT … SELECT`로 여행 존재 확인과 삽입을 1회 왕복으로 처리
+
+### 데이터 모델
+
+```
+trips     id, title, country_code, city, start_date, end_date,
+          local_currency, base_currency(KRW), exchange_rate(기본 환율), budget?
+expenses  id, trip_id, amount_local, amount_base, currency(입력 통화),
+          category, payment_method, exchange_rate(저장 시점 환율), memo, place, spent_at
+```
+
+`amount_base`(원화)는 저장 시점에 계산된 스냅샷이고 `exchange_rate`가 그 근거입니다. 합계·통계는 이 값을 그대로 더하므로 환율 변동과 무관하게 과거 기록이 흔들리지 않습니다.
 
 ## 로컬 실행
 
+Node.js 20 이상.
+
 ```bash
 npm install
-npm run build                 # 프론트 빌드 → dist/
-APP_PIN=1234 npm start        # http://localhost:3000
+npm run dev:server     # API — http://localhost:3000 (PIN 1234, 로컬 SQLite ./data/ledger.sqlite)
+npm run dev            # 프론트 — http://localhost:5173 (/api 는 3000으로 프록시)
 ```
 
-개발 중에는 두 개 띄우기:
+프로덕션처럼 한 프로세스로:
 
 ```bash
-npm run dev:server            # API (3000, PIN=1234, 파일 변경 시 자동 재시작)
-npm run dev                   # Vite 개발 서버 (5173, /api 는 3000으로 프록시)
+npm run build && APP_PIN=1234 npm start   # http://localhost:3000
 ```
 
-첫 여행(치앙마이) 자동 생성:
+샘플 데이터:
 
 ```bash
-npm run seed                  # 여행만
-npm run seed -- --demo        # 데모 지출 13건 포함 (화면 확인용)
+npm run seed              # 치앙마이 여행 1개
+npm run seed -- --demo    # + 데모 지출 13건
 ```
 
 ## 환경변수
 
-| 변수 | 기본값 | 설명 |
-|---|---|---|
-| `APP_PIN` | (없음) | 접속 PIN. 비우면 인증 없이 열림 |
-| `APP_SECRET` | `change-me-<PIN>` | 토큰 서명 키. 긴 랜덤 문자열 권장 |
-| `TURSO_DATABASE_URL` | (없음) | 설정하면 Turso 원격 DB 사용 (`libsql://...turso.io`) |
-| `TURSO_AUTH_TOKEN` | (없음) | Turso 토큰 |
-| `DB_PATH` | `./data/ledger.sqlite` | Turso 미설정 시 로컬 SQLite 파일 경로. **볼륨/영구 디스크에 두기** |
-| `PORT` | `3000` | 포트 |
+| 변수 | 설명 |
+|---|---|
+| `APP_PIN` | 접속 PIN. 비우면 인증 없음 |
+| `APP_SECRET` | 토큰 서명 키 (긴 랜덤 문자열) |
+| `TURSO_DATABASE_URL` | `libsql://…turso.io` — 설정 시 Turso 사용 |
+| `TURSO_AUTH_TOKEN` | Turso 토큰 |
+| `DB_PATH` | Turso 미설정 시 로컬 SQLite 경로 (기본 `./data/ledger.sqlite`) |
+| `PORT` | Node 서버 포트 (기본 3000) |
+
+`.env.example` 참고.
 
 ## 배포
 
-### Vercel (무료) + Turso (무료)  ← 현재 운영 구성
+### Vercel + Turso (현재 운영, 무료)
 
-1. [Turso](https://app.turso.tech)에서 DB 생성 → URL(`libsql://...`)과 토큰 발급
-2. [Vercel](https://vercel.com/new) → GitHub 레포 `travel-ledger` Import (`vercel.json` 자동 적용: 프론트는 정적, `/api/*`는 `api/index.js` 서버리스 함수)
-3. Environment Variables에 `APP_PIN`, `APP_SECRET`(긴 랜덤 문자열), `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` 입력 → Deploy
-4. 잠드는 문제 없음(서버리스). 무료 Hobby 플랜으로 충분.
+1. Vercel에서 이 레포 Import — `vercel.json`이 빌드/라우팅/리전(`sin1`)을 정의
+2. **Storage → Turso → Create / Connect** (환경변수 prefix `TURSO`) → `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` 자동 주입
+3. `APP_PIN`, `APP_SECRET` 추가 → Deploy
 
-### Render (무료) + Turso (무료)
+`main` 푸시마다 자동 배포. Hobby 플랜은 커밋 작성자가 Vercel 계정과 같은 GitHub 계정이어야 배포됩니다.
 
-1. [Turso](https://turso.tech)에서 DB 생성 → URL(`libsql://...`)과 토큰 발급
-2. Render → **New → Blueprint** → 이 레포 선택 (`render.yaml` 자동 적용)
-3. 환경변수 `APP_PIN`, `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` 입력 → Deploy
-4. 무료 인스턴스는 15분 유휴 시 잠듦 → [UptimeRobot](https://uptimerobot.com) 등으로 `/healthz`를 5분마다 호출해 깨워두기
+### 그 외
 
+- **Docker** — `docker build -t travel-ledger . && docker run -p 3000:3000 -e APP_PIN=… -v ledger-data:/data travel-ledger` (`/data`에 SQLite 저장)
+- **Render** — `render.yaml` 블루프린트 포함. 무료 인스턴스는 유휴 시 잠들고 디스크가 휘발성이라 Turso 연결 필수
+- **Node 직접** — `npm ci && npm run build && APP_PIN=… npm start`, HTTPS는 리버스 프록시에서
 
-### Docker (VPS 등)
+## API
 
-```bash
-docker build -t travel-ledger .
-docker run -d --name ledger -p 3000:3000 \
-  -e APP_PIN=1234 -e APP_SECRET=$(openssl rand -hex 32) \
-  -v ledger-data:/data travel-ledger
-```
-
-`/data` 볼륨에 SQLite가 저장되므로 컨테이너를 지워도 데이터는 남습니다.
-
-### Railway / Fly.io / Render
-
-- Dockerfile을 자동 인식합니다.
-- 환경변수 `APP_PIN`, `APP_SECRET` 설정.
-- **영구 디스크(volume)를 `/data`에 마운트**하세요. 안 하면 재배포 때 DB가 초기화됩니다.
-  - Railway: Volume 추가 → mount path `/data`
-  - Fly: `fly volumes create ledger_data` 후 `fly.toml`에 `[mounts] source="ledger_data" destination="/data"`
-
-### 그냥 Node로 (pm2 등)
-
-```bash
-npm ci && npm run build
-APP_PIN=1234 APP_SECRET=... DB_PATH=/var/lib/ledger/ledger.sqlite PORT=3000 npm start
-```
-
-HTTPS는 Caddy/nginx 등 리버스 프록시 뒤에 두면 됩니다. (PIN이 평문으로 전송되므로 HTTPS 권장)
-
-## 백업
-
-- 앱 설정 화면에서 JSON 내려받기 → 복원 가능.
-- 서버에서 직접: `DB_PATH` 파일(+ `-wal`, `-shm`) 복사. 또는 `sqlite3 ledger.sqlite ".backup backup.sqlite"`.
-
-## API 요약
+모든 `/api/*`는 `Authorization: Bearer <token>` (PIN 미설정 시 생략 가능).
 
 ```
-POST /api/auth/login            {pin} → {token}       Authorization: Bearer <token>
-GET  /api/trips                 목록(+totalBase, expenseCount)
-POST /api/trips | PUT /api/trips/:id | DELETE /api/trips/:id
-POST /api/trips/:id/recalc      현재 환율로 지출 전체 재계산
-GET  /api/trips/:id/expenses
-POST /api/expenses | PUT /api/expenses/:id | DELETE /api/expenses/:id
-GET  /api/export | POST /api/import?replace=0|1
-GET  /api/rate?from=THB&to=KRW  (open.er-api.com 프록시)
+POST   /api/auth/login              { pin } → { token }
+GET    /api/auth/status             { required }
+
+GET    /api/trips                   목록 (+ totalBase, expenseCount)
+POST   /api/trips
+GET    /api/trips/:id
+PUT    /api/trips/:id
+DELETE /api/trips/:id               지출 포함 삭제
+POST   /api/trips/:id/recalc        여행 기본 환율로 지출 전체 재계산
+GET    /api/trips/:id/expenses
+
+POST   /api/expenses                { tripId, amountLocal, amountBase, currency, category,
+                                      paymentMethod, exchangeRate?, memo?, place?, spentAt }
+PUT    /api/expenses/:id
+DELETE /api/expenses/:id
+
+GET    /api/export                  전체 JSON
+POST   /api/import?replace=0|1      JSON 복원 (병합 / 교체)
+GET    /api/rate?from=THB&to=KRW    실시간 환율 (open.er-api.com 프록시)
+GET    /healthz
 ```
 
-## 구조
+## 프로젝트 구조
 
 ```
-api/      index.js  Vercel 서버리스 진입점 (hono/vercel)
-server/   app.js(API 정의, 공유)  index.js(Node 서버: API+정적 서빙)  db.js(libSQL)  seed.js
-src/      pages/ components/ store/(zustand) lib/(api, router, format) types.ts
-dist/     npm run build 산출물 (서버가 서빙)
+api/index.js          Vercel 서버리스 진입점 (hono/vercel, 메서드별 export)
+server/app.js         Hono 앱 — 인증, 라우트, 검증 (Node/Vercel 공용)
+server/index.js       Node 서버 — app + dist/ 정적 서빙
+server/db.js          libSQL 저장 레이어, 스키마/마이그레이션
+server/seed.js        샘플 데이터
+src/
+  pages/              TripsPage · LedgerPage · StatsPage · SettingsPage · LoginPage
+  components/         ui(Sheet·Button…) · ExpenseForm · TripForm · TripHeader
+  store/useStore.ts   Zustand — 인증, 여행/지출 상태, 토스트
+  lib/                api(fetch 래퍼) · rate(실시간 환율+캐시) · router(hash) · format(금액·날짜)
+  types.ts            도메인 타입, 카테고리/통화 메타
+docs/screenshots/
+vercel.json · render.yaml · Dockerfile
 ```
 
-## 다음 단계 아이디어
+## 설계 메모
 
-동행인 정산(N빵), 영수증 사진, 일정 연동, 로그인/멀티유저, Spring Boot 백엔드로 교체.
+- **왜 지출별 환율인가** — 한 달 체류 중 환율이 수 % 움직이는데 여행 단위 고정 환율은 실제 결제액과 어긋남. 저장 시점 환율을 지출에 박아두면 "그때 얼마였나"가 보존되고, 통계도 재계산 없이 합산만 하면 됨
+- **왜 서버리스 + Turso인가** — 브라우저 저장(IndexedDB)은 iOS가 임의로 지울 수 있어 탈락. 항상 켜진 서버는 비용이 들거나(Railway) 무료 티어가 잠듦(Render). Vercel 함수 + Turso 조합은 무료이면서 잠들지 않고, 둘 다 싱가포르에 둘 수 있음
+- **카테고리 색** — 6색을 색각 이상(CVD) 분리 검증을 통과한 고정 순서로 사용. 차트에서 색만으로 구분되지 않도록 범례·라벨 병기
+
+## 로드맵
+
+- [ ] 동행인 초대 + 정산(N빵)
+- [ ] 영수증 사진 첨부
+- [ ] 다중 사용자 / 로그인
+- [ ] 백엔드를 Spring Boot로 교체해보기
