@@ -24,7 +24,7 @@
 - **요약 카드** — 총 지출, 오늘 지출, 하루 평균, 남은 예산과 "남은 n일 · 하루 ₩x 가능"
 - **통계** — 카테고리 도넛 + 비율 리스트, 결제수단 비율(환전 계획용), 일별 막대와 일 예산선. 원화/현지통화 토글
 - **백업** — JSON 내려받기/복원(병합 또는 교체), CSV 내려받기(엑셀·시트용), 여행 기본 환율로 일괄 재계산
-- **접근 제한** — PIN 1개(환경변수). 토큰은 HMAC 서명이라 서버에 세션 저장 없음
+- **계정** — 구글 로그인. 여행/지출은 소유자별로 완전히 분리되고 모든 쿼리에 소유자 조건이 붙음. `ALLOWED_EMAILS`로 특정 계정만 허용 가능(개인용) / 비우면 누구나 가입. 세션 토큰은 HMAC 서명이라 서버 세션 저장소 없음. 로컬 개발은 PIN 모드
 - **모바일 대응** — iPhone Safari 기준으로 검증: 입력 시 자동 확대 방지, 노치/홈 인디케이터 safe-area, 키보드가 올라와도 바텀시트가 밀리지 않도록 visualViewport 기준 배치. 홈 화면에 추가하면 앱처럼 실행
 
 ## 아키텍처
@@ -53,7 +53,8 @@ flowchart LR
 ### 데이터 모델
 
 ```
-trips     id, title, country_code, city, start_date, end_date,
+users     id(google:<sub>), email, name, picture
+trips     id, owner_id → users, title, country_code, city, start_date, end_date,
           local_currency, base_currency(KRW), exchange_rate(기본 환율), budget?
 expenses  id, trip_id, amount_local, amount_base, currency(입력 통화),
           category, payment_method, exchange_rate(저장 시점 환율), memo, place, spent_at
@@ -88,8 +89,10 @@ npm run seed -- --demo    # + 데모 지출 13건
 
 | 변수 | 설명 |
 |---|---|
-| `APP_PIN` | 접속 PIN. 비우면 인증 없음 |
-| `APP_SECRET` | 토큰 서명 키 (긴 랜덤 문자열) |
+| `GOOGLE_CLIENT_ID` | 구글 OAuth 클라이언트 ID. 설정하면 구글 로그인 모드 |
+| `ALLOWED_EMAILS` | 로그인 허용 이메일(쉼표 구분). 비우면 누구나 가입 |
+| `APP_PIN` | `GOOGLE_CLIENT_ID` 없을 때 PIN 모드 (로컬 개발용) |
+| `APP_SECRET` | 세션 토큰 서명 키 (긴 랜덤 문자열) |
 | `TURSO_DATABASE_URL` | `libsql://…turso.io` — 설정 시 Turso 사용 |
 | `TURSO_AUTH_TOKEN` | Turso 토큰 |
 | `DB_PATH` | Turso 미설정 시 로컬 SQLite 경로 (기본 `./data/ledger.sqlite`) |
@@ -103,7 +106,9 @@ npm run seed -- --demo    # + 데모 지출 13건
 
 1. Vercel에서 이 레포 Import — `vercel.json`이 빌드/라우팅/리전(`sin1`)을 정의
 2. **Storage → Turso → Create / Connect** (환경변수 prefix `TURSO`) → `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` 자동 주입
-3. `APP_PIN`, `APP_SECRET` 추가 → Deploy
+3. `GOOGLE_CLIENT_ID`, `ALLOWED_EMAILS`(선택), `APP_SECRET` 추가 → Deploy
+
+구글 OAuth 클라이언트는 [Google Cloud Console → APIs & Services → Credentials](https://console.cloud.google.com/apis/credentials)에서 **Web application** 타입으로 만들고, Authorized JavaScript origins에 배포 도메인과 `http://localhost:5173`을 등록합니다. 클라이언트 시크릿은 필요 없습니다(ID 토큰 흐름).
 
 `main` 푸시마다 자동 배포. Hobby 플랜은 커밋 작성자가 Vercel 계정과 같은 GitHub 계정이어야 배포됩니다.
 
@@ -118,8 +123,10 @@ npm run seed -- --demo    # + 데모 지출 13건
 모든 `/api/*`는 `Authorization: Bearer <token>` (PIN 미설정 시 생략 가능).
 
 ```
-POST   /api/auth/login              { pin } → { token }
-GET    /api/auth/status             { required }
+GET    /api/auth/status             { mode: google|pin|none, googleClientId? }
+POST   /api/auth/google             { credential } → { token, user }   구글 ID 토큰 검증
+POST   /api/auth/login              { pin } → { token, user }          PIN 모드
+GET    /api/auth/me
 
 GET    /api/trips                   목록 (+ totalBase, expenseCount)
 POST   /api/trips
@@ -144,7 +151,8 @@ GET    /healthz
 
 ```
 api/index.js          Vercel 서버리스 진입점 (hono/vercel, 메서드별 export)
-server/app.js         Hono 앱 — 인증, 라우트, 검증 (Node/Vercel 공용)
+server/app.js         Hono 앱 — 라우트, 검증 (Node/Vercel 공용)
+server/auth.js        구글 ID 토큰 검증, PIN, 세션 토큰 서명/검증
 server/index.js       Node 서버 — app + dist/ 정적 서빙
 server/db.js          libSQL 저장 레이어, 스키마/마이그레이션
 server/seed.js        샘플 데이터
@@ -168,5 +176,4 @@ vercel.json · render.yaml · Dockerfile
 
 - [ ] 동행인 초대 + 정산(N빵)
 - [ ] 영수증 사진 첨부
-- [ ] 다중 사용자 / 로그인
 - [ ] 백엔드를 Spring Boot로 교체해보기

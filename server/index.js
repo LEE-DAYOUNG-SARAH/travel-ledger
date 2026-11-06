@@ -3,7 +3,8 @@ import { serve } from '@hono/node-server'
 import { serveStatic } from '@hono/node-server/serve-static'
 import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { app, APP_PIN } from './app.js'
+import { app } from './app.js'
+import { MODE } from './auth.js'
 import { isRemote } from './db.js'
 
 const PORT = Number(process.env.PORT || 3000)
@@ -18,5 +19,5 @@ if (existsSync(DIST)) {
 }
 
 serve({ fetch: app.fetch, port: PORT, hostname: '0.0.0.0' }, () => {
-  console.log(`▶ 여행 가계부 서버: http://localhost:${PORT}  (PIN ${APP_PIN ? '설정됨' : '없음'}, DB ${isRemote ? 'Turso' : '로컬 파일'})`)
+  console.log(`▶ 여행 가계부 서버: http://localhost:${PORT}  (인증 ${MODE}, DB ${isRemote ? 'Turso' : '로컬 파일'})`)
 })

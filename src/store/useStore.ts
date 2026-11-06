@@ -1,12 +1,15 @@
 import { create } from 'zustand'
 import { api, ApiError, getToken, setToken } from '../lib/api'
-import type { Trip, Expense, TripInput, ExpenseInput } from '../types'
+import type { Trip, Expense, TripInput, ExpenseInput, User, AuthStatus } from '../types'
 
 type Toast = { id: number; msg: string; kind: 'ok' | 'err' }
 
 interface State {
   authRequired: boolean | null
+  authMode: AuthStatus['mode']
+  googleClientId: string
   authed: boolean
+  user: User | null
   trips: Trip[]
   expenses: Record<string, Expense[]> // tripId → list
   loading: boolean
@@ -14,6 +17,7 @@ interface State {
 
   init: () => Promise<void>
   login: (pin: string) => Promise<boolean>
+  loginGoogle: (credential: string) => Promise<boolean>
   logout: () => void
 
   loadTrips: () => Promise<void>
@@ -43,25 +47,36 @@ export const useStore = create<State>((set, get) => {
       ? { ...t, totalBase: (t.totalBase ?? 0) + deltaBase, expenseCount: (t.expenseCount ?? 0) + deltaCount } : t) }))
 
   return {
-    authRequired: null, authed: false, trips: [], expenses: {}, loading: false, toasts: [],
+    authRequired: null, authMode: 'none', googleClientId: '', authed: false, user: null, trips: [], expenses: {}, loading: false, toasts: [],
 
     async init() {
       try {
-        const { required } = await api.authStatus()
-        const authed = !required || !!getToken()
-        set({ authRequired: required, authed })
-        if (authed) await get().loadTrips()
+        const st = await api.authStatus()
+        const authed = !st.required || !!getToken()
+        set({ authRequired: st.required, authMode: st.mode, googleClientId: st.googleClientId ?? '', authed })
+        if (authed) {
+          if (st.required) { try { set({ user: await api.me() }) } catch (e) { handle(e); return } }
+          await get().loadTrips()
+        }
       } catch (e) { handle(e) }
     },
     async login(pin) {
       try {
-        const { token } = await api.login(pin)
-        setToken(token); set({ authed: true })
+        const { token, user } = await api.login(pin)
+        setToken(token); set({ authed: true, user })
         await get().loadTrips()
         return true
       } catch (e) { handle(e); return false }
     },
-    logout() { setToken(''); set({ authed: false, trips: [], expenses: {} }) },
+    async loginGoogle(credential) {
+      try {
+        const { token, user } = await api.loginGoogle(credential)
+        setToken(token); set({ authed: true, user })
+        await get().loadTrips()
+        return true
+      } catch (e) { handle(e); return false }
+    },
+    logout() { setToken(''); set({ authed: false, user: null, trips: [], expenses: {} }) },
 
     async loadTrips() {
       set({ loading: true })

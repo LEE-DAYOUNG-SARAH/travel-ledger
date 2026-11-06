@@ -1,3 +1,6 @@
+export interface User { id: string; email: string; name: string; picture: string }
+export interface AuthStatus { mode: 'google' | 'pin' | 'none'; required: boolean; googleClientId?: string }
+
 export type Category = 'FOOD' | 'TRANSPORT' | 'LODGING' | 'SIGHTSEEING' | 'SHOPPING' | 'ETC'
 export type PaymentMethod = 'CASH' | 'CARD'
 

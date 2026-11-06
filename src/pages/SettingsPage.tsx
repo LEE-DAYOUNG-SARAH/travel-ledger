@@ -12,7 +12,7 @@ function download(name: string, content: string, type: string) {
 }
 
 export function SettingsPage() {
-  const { trips, authRequired, logout, loadTrips, recalcTrip, toast } = useStore()
+  const { trips, authRequired, user, logout, loadTrips, recalcTrip, toast } = useStore()
   const fileRef = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
   const [replace, setReplace] = useState(false)
@@ -91,8 +91,14 @@ export function SettingsPage() {
 
       {authRequired && (
         <Card className="mt-4 p-5">
-          <h2 className="font-bold">보안</h2>
-          <p className="mt-1 text-sm text-slate-500">이 기기에서 로그아웃하면 다시 PIN을 입력해야 해요.</p>
+          <h2 className="font-bold">계정</h2>
+          {user && (
+            <div className="mt-3 flex items-center gap-3">
+              {user.picture ? <img src={user.picture} alt="" referrerPolicy="no-referrer" className="h-10 w-10 rounded-full" /> : <div className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-50 text-lg">👤</div>}
+              <div className="min-w-0"><p className="truncate font-semibold">{user.name || '사용자'}</p><p className="truncate text-xs text-slate-500">{user.email}</p></div>
+            </div>
+          )}
+          <p className="mt-3 text-sm text-slate-500">여행과 지출은 이 계정에만 보여요. 다른 기기에서도 같은 계정으로 로그인하면 이어서 쓸 수 있어요.</p>
           <Button variant="danger" className="mt-3" onClick={logout}>로그아웃</Button>
         </Card>
       )}

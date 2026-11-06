@@ -5,7 +5,7 @@ import * as store from './db.js'
 
 const demo = process.argv.includes('--demo')
 await store.migrate()
-if ((await store.listTrips()).length > 0 && !process.argv.includes('--force')) {
+if ((await store.db.execute('SELECT COUNT(*) AS n FROM trips')).rows[0].n > 0 && !process.argv.includes('--force')) {
   console.log('이미 여행이 있어 시드를 건너뜁니다. (--force 로 강제)'); process.exit(0)
 }
 
@@ -13,7 +13,8 @@ const trip = await store.createTrip({
   title: '치앙마이 한 달 살기', countryCode: 'TH', city: '치앙마이',
   startDate: '2026-10-14', endDate: '2026-11-14',
   localCurrency: 'THB', baseCurrency: 'KRW', exchangeRate: 43.5, budget: 1500000,
-})
+}, process.env.SEED_OWNER || 'pin-user')
+if (!process.env.SEED_OWNER) console.log('(PIN 사용자 소유 → 구글 로그인 도입 시 첫 허용 계정에 자동 귀속)')
 console.log('여행 생성:', trip.title, trip.id)
 
 if (demo) {
@@ -35,7 +36,7 @@ if (demo) {
   ]
   for (const [spentAt, amt, category, paymentMethod, memo, place] of rows) {
     await store.createExpense({ tripId: trip.id, amountLocal: amt, amountBase: Math.round(amt * R), currency: 'THB',
-      category, paymentMethod, exchangeRate: R, memo, place, spentAt: spentAt + ':00' })
+      category, paymentMethod, exchangeRate: R, memo, place, spentAt: spentAt + ':00' }, process.env.SEED_OWNER || 'pin-user')
   }
   console.log(`데모 지출 ${rows.length}건 생성`)
 }

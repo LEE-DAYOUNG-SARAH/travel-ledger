@@ -1,4 +1,4 @@
-import type { Trip, Expense, TripInput, ExpenseInput } from '../types'
+import type { Trip, Expense, TripInput, ExpenseInput, User, AuthStatus } from '../types'
 
 const TOKEN_KEY = 'ledger.token'
 export const getToken = () => localStorage.getItem(TOKEN_KEY) || ''
@@ -24,8 +24,10 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
 }
 
 export const api = {
-  authStatus: () => req<{ required: boolean }>('GET', '/auth/status'),
-  login: (pin: string) => req<{ token: string }>('POST', '/auth/login', { pin }),
+  authStatus: () => req<AuthStatus>('GET', '/auth/status'),
+  login: (pin: string) => req<{ token: string; user: User }>('POST', '/auth/login', { pin }),
+  loginGoogle: (credential: string) => req<{ token: string; user: User }>('POST', '/auth/google', { credential }),
+  me: () => req<User>('GET', '/auth/me'),
 
   listTrips: () => req<Trip[]>('GET', '/trips'),
   createTrip: (t: TripInput) => req<Trip>('POST', '/trips', t),
