@@ -2,7 +2,8 @@
 import { createHash } from 'node:crypto'
 
 const API_KEY = process.env.GEMINI_API_KEY || ''
-const MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash'
+const MODEL = process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite-preview'
+let lastGood = null // 이 인스턴스에서 마지막으로 성공한 모델 → 다음엔 먼저 시도
 export const visionEnabled = () => !!API_KEY
 
 const CATEGORIES = ['FOOD', 'TRANSPORT', 'LODGING', 'SIGHTSEEING', 'SHOPPING', 'ETC']
@@ -81,10 +82,10 @@ function makeBody(parts, thinkingOff) {
 async function callModel(model, parts, deadline) {
   const left = deadline - Date.now(); if (left < 3000) throw Object.assign(new Error('시간 초과'), { code: 'TIMEOUT' })
   const post = async (body) => fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${API_KEY}`, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(Math.min(deadline - Date.now(), 20000)),
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(Math.min(deadline - Date.now(), 15000)),
   })
   let r = await post(makeBody(parts, true))
-  if (r.status === 400) { const t = await r.text().catch(() => ''); if (/thinking/i.test(t)) r = await post(makeBody(parts, false)); else throw Object.assign(new Error(`Gemini 400: ${t.slice(0, 160)}`), { status: 400 }) }
+  if (r.status === 400) r = await post(makeBody(parts, false)) // 옵션(thinking 등) 거부 가능성 → 빼고 재시도
   if (!r.ok) {
     const t = await r.text().catch(() => '')
     const err = Object.assign(new Error(`Gemini ${r.status}: ${t.slice(0, 160)}`), { status: r.status, quota: r.status === 429 && /quota|billing/i.test(t) })
@@ -96,7 +97,7 @@ async function callModel(model, parts, deadline) {
 /** 이미지 1장을 모델 후보 순서대로 시도 */
 async function extractOne(image, promptText, deadline) {
   const parts = [{ text: promptText }, { inline_data: { mime_type: image.mime || 'image/jpeg', data: image.data } }]
-  const candidates = [MODEL]
+  const candidates = [...new Set([lastGood, MODEL].filter(Boolean))]
   let lastErr = null
   for (let ci = 0; ci < candidates.length; ci++) {
     const model = candidates[ci]
@@ -106,6 +107,7 @@ async function extractOne(image, promptText, deadline) {
       try {
         const j = await callModel(model, parts, deadline)
         console.log(`[vision] ${model} ok in ${Date.now() - t0}ms`)
+        lastGood = model
         return j
       } catch (e) {
         lastErr = e

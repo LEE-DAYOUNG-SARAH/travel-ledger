@@ -97,7 +97,7 @@ npm run seed -- --demo    # + 데모 지출 13건
 | `APP_PIN` | `GOOGLE_CLIENT_ID` 없을 때 PIN 모드 (로컬 개발용) |
 | `APP_SECRET` | 세션 토큰 서명 키 (긴 랜덤 문자열) |
 | `GEMINI_API_KEY` | 캡처 가져오기용 Google AI Studio 키. 없으면 기능 숨김 |
-| `GEMINI_MODEL` | 기본 `gemini-3.8-flash` |
+| `GEMINI_MODEL` | 기본 `gemini-3.1-flash-lite-preview` |
 | `IMPORT_ALLOWED_EMAILS` | 캡처 가져오기 허용 계정(쉼표). 비우면 모두 |
 | `RESEND_API_KEY`, `OWNER_EMAIL` | 사용 요청 알림 메일 (Resend) |
 | `TURSO_DATABASE_URL` | `libsql://…turso.io` — 설정 시 Turso 사용 |

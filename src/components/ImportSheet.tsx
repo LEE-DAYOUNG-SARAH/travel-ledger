@@ -17,6 +17,8 @@ export function ImportSheet({ trip, open, onClose, onSaved }:
   const [rows, setRows] = useState<Row[]>([])
   const [err, setErr] = useState('')
   const [done, setDone] = useState(0)
+  const [tick, setTick] = useState(0) // 분석 경과 시간(0.1초 단위) — 진행바 애니메이션용
+  useEffect(() => { if (phase !== 'analyzing') { setTick(0); return } const id = setInterval(() => setTick((t) => t + 1), 100); return () => clearInterval(id) }, [phase])
   const [rate, setRate] = useState<number>(trip.exchangeRate)
   useEffect(() => { getLiveRate(trip.localCurrency, trip.baseCurrency).then((r) => r && setRate(r.rate)) }, [trip.localCurrency, trip.baseCurrency])
 
@@ -114,7 +116,8 @@ export function ImportSheet({ trip, open, onClose, onSaved }:
             <div className="mt-4">
               <div className="flex items-center justify-between text-xs text-slate-500"><span>캡처 읽는 중</span><span className="tnum">{done} / {images.length}</span></div>
               <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-100">
-                <div className="h-full rounded-full bg-brand-500 transition-all duration-500" style={{ width: `${Math.max(6, (done / images.length) * 100)}%` }} />
+                <div className="h-full rounded-full bg-brand-500 transition-all duration-300"
+                  style={{ width: `${Math.min(96, Math.max((done / images.length) * 100, (done / images.length) * 100 + (1 / images.length) * 100 * (1 - Math.exp(-tick / 40))))}%` }} />
               </div>
             </div>
           )}
