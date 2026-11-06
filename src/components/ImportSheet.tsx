@@ -80,7 +80,7 @@ export function ImportSheet({ trip, open, onClose, onSaved }:
             </Button>
           </div>
         : <Button className="w-full py-3" onClick={analyze} disabled={!images.length || phase === 'analyzing'}>
-            {phase === 'analyzing' ? '분석 중… (10초 정도)' : `${images.length}장 분석하기`}
+            {phase === 'analyzing' ? '분석 중… (보통 10초, 혼잡하면 최대 45초)' : `${images.length}장 분석하기`}
           </Button>}>
       {phase !== 'review' && phase !== 'saving' && (
         <div className="pt-1">

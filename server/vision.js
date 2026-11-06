@@ -54,6 +54,32 @@ Rules:
 Local currency of the trip: ${localCurrency}. Base currency: ${baseCurrency}.
 Return JSON only.`
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+let modelCache = null // 사용 가능한 flash 모델 목록 (인스턴스당 1회)
+async function listFlashModels() {
+  if (modelCache) return modelCache
+  try {
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${API_KEY}&pageSize=100`, { signal: AbortSignal.timeout(5000) })
+    const j = await r.json()
+    const names = (j.models || [])
+      .filter((m) => (m.supportedGenerationMethods || []).includes('generateContent') && /flash/i.test(m.name) && !/tts|audio|image|live|embedding/i.test(m.name))
+      .map((m) => m.name.replace(/^models\//, ''))
+    // 최신(이름 내림차순) 우선, 'lite' 는 뒤로
+    names.sort((a, b) => (/lite/.test(a) ? 1 : 0) - (/lite/.test(b) ? 1 : 0) || b.localeCompare(a, undefined, { numeric: true }))
+    modelCache = names
+  } catch { modelCache = [] }
+  return modelCache
+}
+
+async function callModel(model, body, deadline) {
+  const left = deadline - Date.now(); if (left < 3000) throw Object.assign(new Error('시간 초과'), { code: 'TIMEOUT' })
+  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${API_KEY}`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(Math.min(left, 40000)),
+  })
+  if (!r.ok) { const t = await r.text().catch(() => ''); throw Object.assign(new Error(`Gemini ${r.status}: ${t.slice(0, 160)}`), { status: r.status }) }
+  return r.json()
+}
+
 /** images: [{ mime, data(base64) }] → items[] */
 export async function extractExpenses(images, ctx) {
   if (!API_KEY) throw new Error('GEMINI_API_KEY가 설정되지 않았습니다')
@@ -63,14 +89,36 @@ export async function extractExpenses(images, ctx) {
     contents: [{ role: 'user', parts }],
     generationConfig: { temperature: 0.1, response_mime_type: 'application/json', response_schema: SCHEMA },
   }
-  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${API_KEY}`, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(50000),
-  })
-  if (!r.ok) {
-    const t = await r.text().catch(() => '')
-    throw new Error(`Gemini 오류 ${r.status}: ${t.slice(0, 200)}`)
+  const deadline = Date.now() + 48000
+  // 후보: 설정 모델 → 사용 가능한 다른 flash 모델들. 503/429/404 면 다음으로.
+  const candidates = [MODEL]
+  let j = null, lastErr = null
+  for (let ci = 0; ci < candidates.length && !j; ci++) {
+    const model = candidates[ci]
+    for (let attempt = 0; attempt < 2 && !j; attempt++) {
+      try { j = await callModel(model, body, deadline); if (ci > 0 || attempt > 0) console.log(`[vision] ok with ${model} (attempt ${attempt + 1})`) }
+      catch (e) {
+        lastErr = e
+        if (e.code === 'TIMEOUT') break
+        const st = e.status
+        console.warn(`[vision] ${model} attempt ${attempt + 1} failed: ${e.message}`)
+        if (st === 503 || st === 429) { if (attempt === 0) await sleep(1500); continue }
+        if (st === 404 || st === 400) break // 모델 없음 → 다음 후보
+        break
+      }
+    }
+    if (!j && ci === candidates.length - 1 && candidates.length === 1) {
+      // 설정 모델 실패 → 다른 flash 모델 후보 추가
+      for (const m of await listFlashModels()) if (!candidates.includes(m)) candidates.push(m)
+    }
+    if (lastErr?.code === 'TIMEOUT') break
   }
-  const j = await r.json()
+  if (!j) {
+    const st = lastErr?.status
+    if (lastErr?.code === 'TIMEOUT' || lastErr?.name === 'TimeoutError') throw new Error('모델 응답이 너무 늦어요. 잠시 후 다시 시도해주세요')
+    if (st === 503 || st === 429) throw new Error('지금 모델이 혼잡해요. 1~2분 뒤 다시 시도해주세요')
+    throw new Error(lastErr?.message || '모델 호출 실패')
+  }
   const text = j?.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('') || '{}'
   let parsed
   try { parsed = JSON.parse(text) } catch { throw new Error('모델 응답을 해석할 수 없습니다') }
