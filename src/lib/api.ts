@@ -1,4 +1,4 @@
-import type { Trip, Expense, TripInput, ExpenseInput, User, AuthStatus } from '../types'
+import type { Trip, Expense, TripInput, ExpenseInput, User, AuthStatus, ImportedItem } from '../types'
 
 const TOKEN_KEY = 'ledger.token'
 export const getToken = () => localStorage.getItem(TOKEN_KEY) || ''
@@ -40,6 +40,11 @@ export const api = {
   updateExpense: (id: string, e: Partial<ExpenseInput>) => req<Expense>('PUT', `/expenses/${id}`, e),
   deleteExpense: (id: string) => req<{ ok: boolean }>('DELETE', `/expenses/${id}`),
 
+  importStatus: () => req<{ enabled: boolean; allowed: boolean; requested: boolean; requestedAt: string | null }>('GET', '/import/status'),
+  importRequest: (message: string) => req<{ ok: boolean; requested?: boolean; notified?: boolean; throttled?: boolean; notifyConfigured?: boolean }>('POST', '/import/request', { message }),
+  importScreenshots: (tripId: string, images: { mime: string; data: string }[], today: string) =>
+    req<{ items: ImportedItem[] }>('POST', '/import/screenshots', { tripId, images, today }),
+  createExpensesBatch: (items: ExpenseInput[]) => req<{ saved: Expense[]; errors: string[] }>('POST', '/expenses/batch', { items }),
   exportAll: () => req<unknown>('GET', '/export'),
   importAll: (payload: unknown, replace: boolean) => req<{ trips: number; expenses: number }>('POST', `/import?replace=${replace ? 1 : 0}`, payload),
   rate: (from: string, to: string) => req<{ rate: number; updatedAt: string }>('GET', `/rate?from=${from}&to=${to}`),

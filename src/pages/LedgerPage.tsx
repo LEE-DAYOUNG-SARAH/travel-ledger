@@ -2,9 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store/useStore'
 import { Button, Card, Empty, ProgressBar } from '../components/ui'
 import { ExpenseForm } from '../components/ExpenseForm'
+import { ImportSheet } from '../components/ImportSheet'
 import { TripForm } from '../components/TripForm'
 import { TripHeader } from '../components/TripHeader'
-import { CATEGORY_META, PAYMENT_META, type Expense, type Trip } from '../types'
+import { CATEGORY_META, PAYMENT_META, SOURCE_META, type Expense, type Trip } from '../types'
 import { dateKey, fmtDate, fmtMoney, fmtTime, todayKey, tripDays, dayNumber, tripStatus } from '../lib/format'
 
 function ExpenseRow({ e, trip, onClick }: { e: Expense; trip: Trip; onClick: () => void }) {
@@ -19,6 +20,7 @@ function ExpenseRow({ e, trip, onClick }: { e: Expense; trip: Trip; onClick: () 
           <span>·</span><span>{m.label}</span>
           {e.place && e.memo && <><span>·</span><span className="truncate">{e.place}</span></>}
           <span className="ml-0.5 rounded bg-slate-100 px-1.5 py-px text-[10px] font-semibold text-slate-500">{PAYMENT_META[e.paymentMethod].label}</span>
+          {e.source && e.source !== 'manual' && <span className="rounded px-1.5 py-px text-[10px] font-bold text-white" style={{ background: SOURCE_META[e.source].color }}>{SOURCE_META[e.source].label}</span>}
         </p>
       </div>
       <div className="tnum shrink-0 text-right">
@@ -39,7 +41,7 @@ function ExpenseRow({ e, trip, onClick }: { e: Expense; trip: Trip; onClick: () 
 }
 
 export function LedgerPage({ trip }: { trip: Trip }) {
-  const { expenses, loadExpenses, createExpense, updateExpense, deleteExpense, updateTrip, deleteTrip } = useStore()
+  const { expenses, loadExpenses, createExpense, updateExpense, deleteExpense, updateTrip, deleteTrip, importStatus, loadImportStatus, requestImport, loadTrips, toast } = useStore()
   const list = expenses[trip.id]
   const days = useMemo(() => tripDays(trip.startDate, trip.endDate), [trip.startDate, trip.endDate])
   const status = tripStatus(trip.startDate, trip.endDate)
@@ -47,9 +49,11 @@ export function LedgerPage({ trip }: { trip: Trip }) {
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState<Expense | null>(null)
   const [editTrip, setEditTrip] = useState(false)
+  const [importing, setImporting] = useState(false)
   const tabsRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => { if (!list) loadExpenses(trip.id) }, [trip.id, list, loadExpenses])
+  useEffect(() => { if (!importStatus) loadImportStatus() }, [importStatus, loadImportStatus])
   useEffect(() => {
     const box = tabsRef.current; const el = box?.querySelector<HTMLElement>('[data-active="true"]')
     if (!box || !el) return
@@ -73,6 +77,21 @@ export function LedgerPage({ trip }: { trip: Trip }) {
     for (const e of visible) { const k = dateKey(e.spentAt); g.set(k, [...(g.get(k) ?? []), e]) }
     return [...g.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1))
   }, [visible])
+
+  function ImportButton() {
+    if (!importStatus) return null
+    if (importStatus.allowed) return (
+      <Button variant="soft" className="w-full py-2.5" onClick={() => setImporting(true)}>📷 캡처로 가져오기 <span className="font-normal text-brand-500/80">· 네이버페이 · Grab · Bolt</span></Button>
+    )
+    return (
+      <div className="flex items-center justify-between gap-2 rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-500 ring-1 ring-slate-200">
+        <span>📷 캡처로 가져오기는 승인된 계정만 쓸 수 있어요</span>
+        {importStatus.requested
+          ? <span className="shrink-0 font-semibold text-slate-400">요청됨</span>
+          : <button onClick={() => requestImport('')} className="shrink-0 font-semibold text-brand-600">사용 요청</button>}
+      </div>
+    )
+  }
 
   const elapsedDays = status === 'done' ? days.length : Math.max(1, Math.min(days.length, dayNumber(trip.startDate, todayKey())))
   const remainBudget = trip.budget != null ? trip.budget - total : null
@@ -106,9 +125,11 @@ export function LedgerPage({ trip }: { trip: Trip }) {
             )}
           </Card>
           <div className="mt-3 hidden lg:block"><Button className="w-full py-3" onClick={() => setAdding(true)}>+ 지출 추가</Button></div>
+          {importStatus?.enabled && <div className="mt-2 hidden lg:block"><ImportButton /></div>}
         </div>
 
         <div className="mt-4 min-w-0 lg:mt-0">
+          {importStatus?.enabled && <div className="mb-3 lg:hidden"><ImportButton /></div>}
           {/* 날짜 탭 */}
           <div ref={tabsRef} className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4 pb-1">
             <DayTab label="전체" sub={fmtMoney(total, trip.baseCurrency, { compact: true })} active={selected === 'ALL'} onClick={() => setSelected('ALL')} />
@@ -145,6 +166,8 @@ export function LedgerPage({ trip }: { trip: Trip }) {
       <button onClick={() => setAdding(true)} aria-label="지출 추가"
         style={{ bottom: "calc(1.5rem + env(safe-area-inset-bottom))" }} className="fixed right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-brand-500 text-3xl text-white shadow-lg shadow-brand-500/40 active:scale-95 lg:hidden">+</button>
 
+      {importing && <ImportSheet trip={trip} open onClose={() => setImporting(false)}
+        onSaved={async (n) => { await loadExpenses(trip.id); await loadTrips(); if (n) toast(`${n}건 가져왔어요`) }} />}
       {adding && <ExpenseForm trip={trip} open onClose={() => setAdding(false)} defaultDate={selected === 'ALL' ? (status === 'ongoing' ? todayKey() : trip.startDate) : selected} onSubmit={createExpense} />}
       {editing && <ExpenseForm trip={trip} open initial={editing} onClose={() => setEditing(null)}
         onSubmit={(e) => updateExpense(editing.id, e)} onDelete={() => deleteExpense(trip.id, editing.id)} />}

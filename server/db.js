@@ -43,6 +43,14 @@ CREATE TABLE IF NOT EXISTS expenses (
   updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_expenses_trip_spent ON expenses(trip_id, spent_at);
+CREATE TABLE IF NOT EXISTS import_requests (
+  user_id TEXT PRIMARY KEY,
+  email TEXT NOT NULL,
+  name TEXT NOT NULL DEFAULT '',
+  message TEXT NOT NULL DEFAULT '',
+  requested_at TEXT NOT NULL,
+  notified INTEGER NOT NULL DEFAULT 0
+);
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   email TEXT NOT NULL UNIQUE,
@@ -57,6 +65,9 @@ CREATE TABLE IF NOT EXISTS users (
     'ALTER TABLE expenses ADD COLUMN exchange_rate REAL',
     'ALTER TABLE trips ADD COLUMN owner_id TEXT',
     'CREATE INDEX IF NOT EXISTS idx_trips_owner ON trips(owner_id, start_date)',
+    "ALTER TABLE expenses ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'",
+    'ALTER TABLE expenses ADD COLUMN import_key TEXT',
+    'CREATE INDEX IF NOT EXISTS idx_expenses_import ON expenses(trip_id, import_key)',
   ]) { try { await db.execute(sql) } catch { /* already applied */ } }
 }
 
@@ -77,6 +88,7 @@ const expenseFromRow = (r) => r && ({
   amountLocal: Number(r.amount_local), amountBase: Number(r.amount_base), currency: r.currency,
   category: r.category, paymentMethod: r.payment_method,
   exchangeRate: r.exchange_rate == null ? null : Number(r.exchange_rate),
+  source: r.source || 'manual', importKey: r.import_key ?? null,
   memo: r.memo, place: r.place, spentAt: r.spent_at,
   createdAt: r.created_at, updatedAt: r.updated_at,
 })
@@ -118,6 +130,17 @@ export async function upsertUser(u) {
 /** 소유자 없는(로그인 도입 이전) 여행을 이 사용자에게 귀속 */
 export async function claimLegacyTrips(ownerId) {
   return (await q("UPDATE trips SET owner_id = ? WHERE owner_id IS NULL OR owner_id = 'pin-user'", [ownerId])).rowsAffected
+}
+
+// ---------- 캡처 가져오기 사용 요청 ----------
+export async function getImportRequest(userId) {
+  const r = (await q('SELECT * FROM import_requests WHERE user_id = ?', [userId])).rows[0]
+  return r ? { userId: r.user_id, email: r.email, name: r.name, message: r.message, requestedAt: r.requested_at, notified: !!r.notified } : null
+}
+export async function upsertImportRequest(u, message, notified) {
+  await q(`INSERT INTO import_requests (user_id,email,name,message,requested_at,notified) VALUES (?,?,?,?,?,?)
+    ON CONFLICT(user_id) DO UPDATE SET message=excluded.message, requested_at=excluded.requested_at, notified=excluded.notified`,
+    [u.id, u.email, str(u.name), str(message).slice(0, 300), now(), notified ? 1 : 0])
 }
 
 // ---------- trips (모두 owner 범위) ----------
@@ -168,12 +191,15 @@ export async function getExpense(id, ownerId) {
 export async function createExpense(b, ownerId) {
   const id = b.id || randomUUID(); const t = now()
   // 여행 존재+소유 확인을 INSERT … SELECT 로 합쳐 왕복 1회
-  const r = await q(`INSERT INTO expenses (id,trip_id,amount_local,amount_base,currency,category,payment_method,exchange_rate,memo,place,spent_at,created_at,updated_at)
-    SELECT ?,?,?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM trips WHERE id = ? AND owner_id = ?)`,
-    [id, b.tripId, b.amountLocal, b.amountBase, b.currency, b.category, b.paymentMethod, b.exchangeRate ?? null, str(b.memo), str(b.place), b.spentAt, b.createdAt || t, t, b.tripId, ownerId])
+  const source = str(b.source, 'manual') || 'manual'
+  const r = await q(`INSERT INTO expenses (id,trip_id,amount_local,amount_base,currency,category,payment_method,exchange_rate,source,import_key,memo,place,spent_at,created_at,updated_at)
+    SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM trips WHERE id = ? AND owner_id = ?)`,
+    [id, b.tripId, b.amountLocal, b.amountBase, b.currency, b.category, b.paymentMethod, b.exchangeRate ?? null, source, b.importKey ?? null,
+      str(b.memo), str(b.place), b.spentAt, b.createdAt || t, t, b.tripId, ownerId])
   if (!r.rowsAffected) return null
   return { id, tripId: b.tripId, amountLocal: b.amountLocal, amountBase: b.amountBase, currency: b.currency, category: b.category,
-    paymentMethod: b.paymentMethod, exchangeRate: b.exchangeRate ?? null, memo: str(b.memo), place: str(b.place), spentAt: b.spentAt, createdAt: b.createdAt || t, updatedAt: t }
+    paymentMethod: b.paymentMethod, exchangeRate: b.exchangeRate ?? null, source, importKey: b.importKey ?? null,
+    memo: str(b.memo), place: str(b.place), spentAt: b.spentAt, createdAt: b.createdAt || t, updatedAt: t }
 }
 export async function updateExpense(id, b, cur) {
   if (!cur) return null // 호출자가 소유권 확인된 행을 넘김
@@ -184,6 +210,13 @@ export async function updateExpense(id, b, cur) {
 }
 export async function deleteExpense(id, ownerId) {
   return (await q('DELETE FROM expenses WHERE id = ? AND trip_id IN (SELECT id FROM trips WHERE owner_id = ?)', [id, ownerId])).rowsAffected > 0
+}
+
+/** 가져오기 중복 판정용: 여행의 (import_key, 날짜, 현지금액) 목록 */
+export async function expenseFingerprints(tripId, ownerId) {
+  const r = await q(`SELECT e.import_key, substr(e.spent_at,1,10) AS d, e.amount_local, e.currency FROM expenses e
+    JOIN trips t ON t.id = e.trip_id WHERE e.trip_id = ? AND t.owner_id = ?`, [tripId, ownerId])
+  return r.rows.map((x) => ({ importKey: x.import_key, date: x.d, amountLocal: Number(x.amount_local), currency: x.currency }))
 }
 
 // ---------- backup ----------

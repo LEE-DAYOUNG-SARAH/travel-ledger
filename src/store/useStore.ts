@@ -14,6 +14,9 @@ interface State {
   expenses: Record<string, Expense[]> // tripId → list
   loading: boolean
   toasts: Toast[]
+  importStatus: { enabled: boolean; allowed: boolean; requested: boolean } | null
+  loadImportStatus: () => Promise<void>
+  requestImport: (message: string) => Promise<void>
 
   init: () => Promise<void>
   login: (pin: string) => Promise<boolean>
@@ -47,7 +50,7 @@ export const useStore = create<State>((set, get) => {
       ? { ...t, totalBase: (t.totalBase ?? 0) + deltaBase, expenseCount: (t.expenseCount ?? 0) + deltaCount } : t) }))
 
   return {
-    authRequired: null, authMode: 'none', googleClientId: '', authed: false, user: null, trips: [], expenses: {}, loading: false, toasts: [],
+    authRequired: null, authMode: 'none', googleClientId: '', authed: false, user: null, trips: [], expenses: {}, loading: false, toasts: [], importStatus: null,
 
     async init() {
       try {
@@ -147,6 +150,17 @@ export const useStore = create<State>((set, get) => {
       } catch (e) { handle(e) }
     },
 
+    async loadImportStatus() {
+      try { const st = await api.importStatus(); set({ importStatus: { enabled: st.enabled, allowed: st.allowed, requested: st.requested } }) }
+      catch { set({ importStatus: { enabled: false, allowed: false, requested: false } }) }
+    },
+    async requestImport(message) {
+      try {
+        const r = await api.importRequest(message)
+        set((s) => ({ importStatus: s.importStatus ? { ...s.importStatus, requested: true } : s.importStatus }))
+        get().toast(r.throttled ? '이미 요청을 보냈어요. 승인되면 바로 쓸 수 있어요' : r.notified ? '요청을 보냈어요. 운영자에게 메일이 갔습니다' : '요청을 남겼어요')
+      } catch (e) { handle(e) }
+    },
     toast(msg, kind = 'ok') {
       const id = ++toastSeq
       set((s) => ({ toasts: [...s.toasts, { id, msg, kind }] }))

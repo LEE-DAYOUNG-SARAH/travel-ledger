@@ -1,6 +1,21 @@
 export interface User { id: string; email: string; name: string; picture: string }
 export interface AuthStatus { mode: 'google' | 'pin' | 'none'; required: boolean; googleClientId?: string }
 
+export type ImportSource = 'naverpay' | 'grab_food' | 'grab_ride' | 'bolt' | 'other'
+export const SOURCE_META: Record<ImportSource | 'manual', { label: string; color: string }> = {
+  naverpay: { label: 'N Pay', color: '#03c75a' },
+  grab_food: { label: 'Grab', color: '#00b14f' },
+  grab_ride: { label: 'Grab', color: '#00b14f' },
+  bolt: { label: 'Bolt', color: '#34d186' },
+  other: { label: '가져옴', color: '#64748b' },
+  manual: { label: '', color: '' },
+}
+export interface ImportedItem {
+  source: ImportSource; merchant: string; amountLocal: number; currency: string; amountKrw: number | null
+  datetime: string | null; dateUncertain: boolean; category: Category; categoryConfidence: number
+  place: string; note: string; importKey: string; duplicate: boolean
+}
+
 export type Category = 'FOOD' | 'TRANSPORT' | 'LODGING' | 'SIGHTSEEING' | 'SHOPPING' | 'ETC'
 export type PaymentMethod = 'CASH' | 'CARD'
 
@@ -31,6 +46,8 @@ export interface Expense {
   category: Category
   paymentMethod: PaymentMethod
   exchangeRate: number | null // 저장 시점 환율 (1 local = ? base)
+  source?: ImportSource | 'manual'
+  importKey?: string | null
   memo: string
   place: string
   spentAt: string // ISO datetime (local)

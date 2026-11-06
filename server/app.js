@@ -2,6 +2,11 @@
 import { Hono } from 'hono'
 import * as store from './db.js'
 import * as auth from './auth.js'
+import { extractExpenses, importKeyOf, visionEnabled } from './vision.js'
+import { notifyOwner, notifyEnabled } from './notify.js'
+
+const IMPORT_ALLOWED = (process.env.IMPORT_ALLOWED_EMAILS || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)
+const canImport = (user) => visionEnabled() && (IMPORT_ALLOWED.length === 0 || IMPORT_ALLOWED.includes(String(user.email).toLowerCase()))
 
 export const APP_PIN = auth.APP_PIN
 const api = new Hono()
@@ -78,6 +83,57 @@ api.put('/expenses/:id', async (c) => {
   return c.json(await store.updateExpense(cur.id, b, cur))
 })
 api.delete('/expenses/:id', async (c) => c.json({ ok: await store.deleteExpense(c.req.param('id'), uid(c)) }))
+
+// ---- 캡처 가져오기 ----
+api.get('/import/status', async (c) => {
+  const user = c.get('user')
+  const allowed = canImport(user)
+  const req = allowed ? null : await store.getImportRequest(user.id)
+  return c.json({ enabled: visionEnabled(), allowed, requested: !!req, requestedAt: req?.requestedAt ?? null })
+})
+// 사용 요청: 기록 + 운영자 메일 (사용자당 1건, 재요청은 덮어씀)
+api.post('/import/request', async (c) => {
+  const user = c.get('user')
+  if (canImport(user)) return c.json({ ok: true, allowed: true })
+  const { message } = await c.req.json().catch(() => ({}))
+  const prev = await store.getImportRequest(user.id)
+  if (prev && Date.now() - new Date(prev.requestedAt).getTime() < 24 * 3600 * 1000) return c.json({ ok: true, requested: true, throttled: true })
+  const sent = await notifyOwner(`[여행 가계부] 캡처 가져오기 사용 요청 — ${user.email}`,
+    `${user.name || '(이름 없음)'} <${user.email}> 님이 캡처 가져오기 기능 사용을 요청했습니다.\n\n메시지: ${String(message || '').slice(0, 300) || '(없음)'}\n\n허용하려면 Vercel 환경변수 IMPORT_ALLOWED_EMAILS 에 이 이메일을 추가하고 Redeploy 하세요.`)
+  await store.upsertImportRequest(user, message || '', sent)
+  return c.json({ ok: true, requested: true, notified: sent, notifyConfigured: notifyEnabled() })
+})
+api.post('/import/screenshots', async (c) => {
+  if (!visionEnabled()) return c.json({ error: '캡처 가져오기가 설정되지 않았습니다 (GEMINI_API_KEY)' }, 503)
+  if (!canImport(c.get('user'))) return c.json({ error: '이 기능은 허용된 계정만 사용할 수 있어요. 설정에서 사용을 요청해주세요.' }, 403)
+  const b = await c.req.json().catch(() => ({}))
+  const trip = await store.getTrip(String(b.tripId || ''), uid(c)); if (!trip) return c.json({ error: 'trip not found' }, 404)
+  const images = Array.isArray(b.images) ? b.images.filter((x) => x && typeof x.data === 'string' && x.data.length > 100).slice(0, 6) : []
+  if (!images.length) return c.json({ error: '이미지가 없습니다' }, 400)
+  const today = typeof b.today === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(b.today) ? b.today : new Date().toISOString().slice(0, 10)
+  const items = await extractExpenses(images, { today, localCurrency: trip.localCurrency, baseCurrency: trip.baseCurrency, tripStart: trip.startDate, tripEnd: trip.endDate })
+  // 중복 판정: import_key 일치 또는 같은 날짜+현지금액
+  const fps = await store.expenseFingerprints(trip.id, uid(c))
+  const seen = new Set()
+  const out = items.map((it) => {
+    const importKey = importKeyOf(it)
+    const d = (it.datetime || '').slice(0, 10)
+    const dupExisting = fps.some((f) => f.importKey === importKey || (d && f.date === d && f.amountLocal === it.amountLocal && f.currency === it.currency))
+    const dupInBatch = seen.has(importKey); seen.add(importKey)
+    return { ...it, importKey, duplicate: dupExisting || dupInBatch }
+  })
+  return c.json({ items: out })
+})
+api.post('/expenses/batch', async (c) => {
+  const b = await c.req.json().catch(() => ({}))
+  const items = Array.isArray(b.items) ? b.items.slice(0, 50) : []
+  const saved = [], errors = []
+  for (const e of items) {
+    const err = store.validateExpense(e); if (err) { errors.push(err); continue }
+    const r = await store.createExpense(e, uid(c)); if (r) saved.push(r); else errors.push('trip not found')
+  }
+  return c.json({ saved, errors })
+})
 
 // ---- backup ----
 api.get('/export', async (c) => c.json(await store.exportAll(uid(c))))

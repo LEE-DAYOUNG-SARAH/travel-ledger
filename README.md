@@ -25,6 +25,7 @@
 - **날짜 탭** — `전체 | Day 1 | Day 2 …` 가로 탭, 오늘 탭 자동 포커스. 내역은 저장 순서대로, 각 줄에 저장 통화 + 반대 통화 환산값
 - **요약 카드** — 총 지출, 오늘 지출, 하루 평균, 남은 예산과 "남은 n일 · 하루 ₩x 가능"
 - **통계** — 카테고리 도넛 + 비율 리스트, 결제수단 비율(환전 계획용), 일별 막대와 일 예산선. 원화/현지통화 토글
+- **📷 캡처로 가져오기** — 네이버페이 결제내역, Grab(음식·차량), Bolt 활동 화면 스크린샷을 한 번에 여러 장 올리면 Gemini Vision이 거래를 추출·분류. 리뷰 화면에서 체크/수정 후 선택한 것만 일괄 저장. 기존 내역과 같은 날짜·금액이면 "중복 의심"으로 체크 해제, 상대 날짜("어제")·분류 확신 낮음은 ⚠️ 표시. 네이버페이처럼 실제 청구 원화가 보이면 그 값을 환산액으로 사용. 운영자가 허용한 계정만 사용 가능하며, 다른 사용자는 "사용 요청" → 운영자 메일 알림
 - **백업** — JSON 내려받기/복원(병합 또는 교체), CSV 내려받기(엑셀·시트용), 여행 기본 환율로 일괄 재계산
 - **계정** — 구글 로그인, 구글 계정이면 누구나 가입. 여행/지출은 소유자별로 완전히 분리되고 모든 쿼리에 소유자 조건이 붙음. `ALLOWED_EMAILS`를 설정하면 특정 계정만 허용(개인용). 세션 토큰은 HMAC 서명이라 서버 세션 저장소 없음. 로컬 개발은 PIN 모드
 - **모바일 대응** — iPhone Safari 기준으로 검증: 입력 시 자동 확대 방지, 노치/홈 인디케이터 safe-area, 키보드가 올라와도 바텀시트가 밀리지 않도록 visualViewport 기준 배치. 홈 화면에 추가하면 앱처럼 실행
@@ -95,6 +96,10 @@ npm run seed -- --demo    # + 데모 지출 13건
 | `ALLOWED_EMAILS` | 로그인 허용 이메일(쉼표 구분). 비우면 누구나 가입 |
 | `APP_PIN` | `GOOGLE_CLIENT_ID` 없을 때 PIN 모드 (로컬 개발용) |
 | `APP_SECRET` | 세션 토큰 서명 키 (긴 랜덤 문자열) |
+| `GEMINI_API_KEY` | 캡처 가져오기용 Google AI Studio 키. 없으면 기능 숨김 |
+| `GEMINI_MODEL` | 기본 `gemini-2.5-flash` |
+| `IMPORT_ALLOWED_EMAILS` | 캡처 가져오기 허용 계정(쉼표). 비우면 모두 |
+| `RESEND_API_KEY`, `OWNER_EMAIL` | 사용 요청 알림 메일 (Resend) |
 | `TURSO_DATABASE_URL` | `libsql://…turso.io` — 설정 시 Turso 사용 |
 | `TURSO_AUTH_TOKEN` | Turso 토큰 |
 | `DB_PATH` | Turso 미설정 시 로컬 SQLite 경로 (기본 `./data/ledger.sqlite`) |
@@ -143,6 +148,11 @@ POST   /api/expenses                { tripId, amountLocal, amountBase, currency,
 PUT    /api/expenses/:id
 DELETE /api/expenses/:id
 
+GET    /api/import/status           { enabled, allowed, requested }
+POST   /api/import/request          사용 요청 (운영자 메일)
+POST   /api/import/screenshots      { tripId, images:[{mime,data}], today } → { items[] }  (허용 계정만)
+POST   /api/expenses/batch          { items[] } → { saved[], errors[] }
+
 GET    /api/export                  전체 JSON
 POST   /api/import?replace=0|1      JSON 복원 (병합 / 교체)
 GET    /api/rate?from=THB&to=KRW    실시간 환율 (open.er-api.com 프록시)
@@ -155,12 +165,14 @@ GET    /healthz
 api/index.js          Vercel 서버리스 진입점 (hono/vercel, 메서드별 export)
 server/app.js         Hono 앱 — 라우트, 검증 (Node/Vercel 공용)
 server/auth.js        구글 ID 토큰 검증, PIN, 세션 토큰 서명/검증
+server/vision.js      스크린샷 → 지출 추출 (Gemini), 중복 키
+server/notify.js      운영자 알림 메일 (Resend)
 server/index.js       Node 서버 — app + dist/ 정적 서빙
 server/db.js          libSQL 저장 레이어, 스키마/마이그레이션
 server/seed.js        샘플 데이터
 src/
   pages/              TripsPage · LedgerPage · StatsPage · SettingsPage · LoginPage
-  components/         ui(Sheet·Button…) · ExpenseForm · TripForm · TripHeader
+  components/         ui(Sheet·Button…) · ExpenseForm · ImportSheet · TripForm · TripHeader
   store/useStore.ts   Zustand — 인증, 여행/지출 상태, 토스트
   lib/                api(fetch 래퍼) · rate(실시간 환율+캐시) · router(hash) · format(금액·날짜)
   types.ts            도메인 타입, 카테고리/통화 메타
@@ -181,5 +193,6 @@ MIT
 ## 로드맵
 
 - [ ] 동행인 초대 + 정산(N빵)
+- [x] 결제내역 캡처 자동 입력 (네이버페이 · Grab · Bolt)
 - [ ] 영수증 사진 첨부
 - [ ] 백엔드를 Spring Boot로 교체해보기
