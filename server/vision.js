@@ -2,7 +2,7 @@
 import { createHash } from 'node:crypto'
 
 const API_KEY = process.env.GEMINI_API_KEY || ''
-const MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash'
+const MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash'
 export const visionEnabled = () => !!API_KEY
 
 const CATEGORIES = ['FOOD', 'TRANSPORT', 'LODGING', 'SIGHTSEEING', 'SHOPPING', 'ETC']
