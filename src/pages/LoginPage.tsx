@@ -64,6 +64,9 @@ export function LoginPage() {
             </div>
             {busy && <p className="mt-3 text-xs text-slate-400">로그인 중…</p>}
             {gisErr && <p className="mt-3 text-xs text-red-500">{gisErr}</p>}
+            <p className="mt-8 text-[11px] text-slate-400">
+              로그인하면 <a href="./terms.html" className="underline">서비스 약관</a>과 <a href="./privacy.html" className="underline">개인정보처리방침</a>에 동의한 것으로 봅니다.
+            </p>
           </>
         ) : (
           <form onSubmit={submitPin}>
