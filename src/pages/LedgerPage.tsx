@@ -167,7 +167,10 @@ export function LedgerPage({ trip }: { trip: Trip }) {
         style={{ bottom: "calc(1.5rem + env(safe-area-inset-bottom))" }} className="fixed right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-brand-500 text-3xl text-white shadow-lg shadow-brand-500/40 active:scale-95 lg:hidden">+</button>
 
       {importing && <ImportSheet trip={trip} open onClose={() => setImporting(false)}
-        onSaved={async (n) => { await loadExpenses(trip.id); await loadTrips(); if (n) toast(`${n}건 가져왔어요`) }} />}
+        onSaved={async (n, errors) => {
+          await loadExpenses(trip.id); await loadTrips()
+          if (n) { setSelected('ALL'); toast(errors.length ? `${n}건 가져왔어요 · ${errors.length}건 실패` : `${n}건 가져왔어요`, errors.length ? 'err' : 'ok') }
+        }} />}
       {adding && <ExpenseForm trip={trip} open onClose={() => setAdding(false)} defaultDate={selected === 'ALL' ? (status === 'ongoing' ? todayKey() : trip.startDate) : selected} onSubmit={createExpense} />}
       {editing && <ExpenseForm trip={trip} open initial={editing} onClose={() => setEditing(null)}
         onSubmit={(e) => updateExpense(editing.id, e)} onDelete={() => deleteExpense(trip.id, editing.id)} />}

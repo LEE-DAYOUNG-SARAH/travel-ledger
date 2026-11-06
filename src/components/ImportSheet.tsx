@@ -10,7 +10,7 @@ import { CATEGORIES, CATEGORY_META, SOURCE_META, type Category, type ExpenseInpu
 type Row = ImportedItem & { checked: boolean; spentAt: string }
 
 export function ImportSheet({ trip, open, onClose, onSaved }:
-  { trip: Trip; open: boolean; onClose: () => void; onSaved: (n: number) => Promise<void> | void }) {
+  { trip: Trip; open: boolean; onClose: () => void; onSaved: (n: number, errors: string[]) => Promise<void> | void }) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [images, setImages] = useState<{ mime: string; data: string; preview: string }[]>([])
   const [phase, setPhase] = useState<'pick' | 'analyzing' | 'review' | 'saving'>('pick')
@@ -73,10 +73,9 @@ export function ImportSheet({ trip, open, onClose, onSaved }:
     setPhase('saving'); setErr('')
     try {
       const { saved, errors } = await api.createExpensesBatch(selected.map(toInput))
-      await onSaved(saved.length)
-      if (errors.length) setErr(`${errors.length}건은 저장하지 못했어요: ${errors[0]}`)
+      await onSaved(saved.length, errors)
       if (saved.length) onClose()
-      else setPhase('review')
+      else { setErr(`저장하지 못했어요: ${errors[0] || '알 수 없는 오류'}`); setPhase('review') }
     } catch (e) { setErr(e instanceof Error ? e.message : '저장 실패'); setPhase('review') }
   }
 
