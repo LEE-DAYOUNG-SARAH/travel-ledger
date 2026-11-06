@@ -19,7 +19,7 @@ console.log('여행 생성:', trip.title, trip.id)
 if (demo) {
   const R = trip.exchangeRate
   const rows = [
-    ['2026-10-14T15:20', 18000, 'LODGING', 'CARD', 'Common Living 11월 임대', '', 'THB'],
+    ['2026-10-14T15:20', 18000, 'LODGING', 'CARD', '숙소 한 달 임대', '', 'THB'],
     ['2026-10-14T19:05', 180, 'FOOD', 'CASH', '카오소이 + 망고주스', '님만해민', 'THB'],
     ['2026-10-15T09:10', 60, 'FOOD', 'CASH', '아침 커피', 'Ristr8to', 'THB'],
     ['2026-10-15T13:40', 95, 'TRANSPORT', 'CARD', '그랩 올드타운', '', 'THB'],

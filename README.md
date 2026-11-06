@@ -1,7 +1,7 @@
 # 여행 가계부 — travel-ledger
 
 여행 중 지출을 **현지 통화 또는 원화로** 기록하고, **저장 시점의 실시간 환율**로 환산해 한눈에 보여주는 반응형 웹앱입니다.
-트리플(Triple) 앱의 가계부 UX를 참고해 만들었고, 트리플 서비스 종료(2025.11) 이후 직접 쓰려고 시작한 개인 프로젝트입니다.
+한 달 살기 중에 직접 쓰려고 만든 개인 프로젝트로, 폰 브라우저에서 바로 열어 쓰는 것을 전제로 설계했습니다.
 
 **스택** React 19 · TypeScript · Vite · Tailwind CSS 4 · Zustand · Recharts / Hono · libSQL(Turso) / Vercel Serverless
 
