@@ -108,7 +108,7 @@ api.post('/import/screenshots', async (c) => {
   if (!canImport(c.get('user'))) return c.json({ error: '이 기능은 허용된 계정만 사용할 수 있어요. 설정에서 사용을 요청해주세요.' }, 403)
   const b = await c.req.json().catch(() => ({}))
   const trip = await store.getTrip(String(b.tripId || ''), uid(c)); if (!trip) return c.json({ error: 'trip not found' }, 404)
-  const images = Array.isArray(b.images) ? b.images.filter((x) => x && typeof x.data === 'string' && x.data.length > 100).slice(0, 6) : []
+  const images = Array.isArray(b.images) ? b.images.filter((x) => x && typeof x.data === 'string' && x.data.length > 100).slice(0, 3) : []
   if (!images.length) return c.json({ error: '이미지가 없습니다' }, 400)
   const today = typeof b.today === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(b.today) ? b.today : new Date().toISOString().slice(0, 10)
   const items = await extractExpenses(images, { today, localCurrency: trip.localCurrency, baseCurrency: trip.baseCurrency, tripStart: trip.startDate, tripEnd: trip.endDate })
