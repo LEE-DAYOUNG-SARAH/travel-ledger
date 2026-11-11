@@ -37,7 +37,7 @@ export function XlsxImportSheet({ open, onClose }: { open: boolean; onClose: () 
     finally { if (fileRef.current) fileRef.current.value = '' }
   }
 
-  const summary = useMemo(() => parsed.map((t, i) => {
+  const summary = useMemo(() => parsed.map((t) => {
     const rows = t.rows
     return { rows, krw: rows.reduce((s, r) => s + r.amountKrw, 0) }
   }), [parsed])
