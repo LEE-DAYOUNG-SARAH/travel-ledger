@@ -30,7 +30,7 @@ export function XlsxImportSheet({ open, onClose }: { open: boolean; onClose: () 
       if (!ts.length) { setErr('여행 시트를 찾지 못했어요. "여행 목록" 시트가 있는 가계부 엑셀 파일인지 확인해주세요'); setPhase('pick'); return }
       const ps: Plan[] = ts.map((t) => {
         const m = findMatch(t)
-        return m ? { checked: true, mode: 'merge' as const, targetId: m.id } : { checked: true, mode: 'new' as const, targetId: null }
+        return m ? { checked: false, mode: 'merge' as const, targetId: m.id } : { checked: true, mode: 'new' as const, targetId: null }
       })
       setParsed(ts); setPlans(ps); setPhase('review')
     } catch (e) { setErr(e instanceof Error ? e.message : '파일을 읽지 못했어요'); setPhase('pick') }
@@ -84,7 +84,8 @@ export function XlsxImportSheet({ open, onClose }: { open: boolean; onClose: () 
           <p>여행 가계부 앱에서 내보낸 엑셀(.xlsx)을 올리면 여행과 지출을 한 번에 가져와요.</p>
           <ul className="mt-3 list-disc space-y-1 pl-5 text-xs">
             <li>"여행 목록" 시트의 여행마다 새 여행을 만들고, 기간이 겹치는 기존 여행이 있으면 거기에 합쳐요</li>
-            <li>합칠 때 중복 검사는 하지 않아요 — <b>엑셀의 모든 행이 그대로 추가</b>되니 겹치는 건 나중에 직접 지워주세요</li>
+            <li>이미 앱에 있는 여행은 <b>기본으로 체크 해제</b>돼요 (합치려면 체크)</li>
+              <li>합칠 때 중복 검사는 하지 않아요 — <b>엑셀의 모든 행이 그대로 추가</b>되니 겹치는 건 나중에 직접 지워주세요</li>
             <li>"여행 N일차" → 시작일 + N−1, "여행준비" → 시작일 하루 전(메모에 [준비])</li>
             <li>시트의 환율·원화 환산 금액을 그대로 사용, 항공은 교통으로</li>
           </ul>
