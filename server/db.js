@@ -69,6 +69,8 @@ CREATE TABLE IF NOT EXISTS users (
     'ALTER TABLE expenses ADD COLUMN import_key TEXT',
     'CREATE INDEX IF NOT EXISTS idx_expenses_import ON expenses(trip_id, import_key)',
   ]) { try { await db.execute(sql) } catch { /* already applied */ } }
+  // 일회성 데이터 정리 (멱등): 엑셀 가져오기 초기 버전이 붙인 '[준비] ' 접두어 제거
+  await db.execute("UPDATE expenses SET memo = substr(memo, 6) WHERE memo LIKE '[준비] %'")
 }
 
 const now = () => new Date().toISOString()
