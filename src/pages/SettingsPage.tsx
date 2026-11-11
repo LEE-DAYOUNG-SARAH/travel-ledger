@@ -4,6 +4,7 @@ import { useStore } from '../store/useStore'
 import { Button, Card } from '../components/ui'
 import { api } from '../lib/api'
 import { CATEGORY_META, PAYMENT_META, type Expense, type Trip } from '../types'
+import { XlsxImportSheet } from '../components/XlsxImportSheet'
 
 function download(name: string, content: string, type: string) {
   const a = document.createElement('a')
@@ -16,6 +17,7 @@ export function SettingsPage() {
   const fileRef = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
   const [replace, setReplace] = useState(false)
+  const [xlsxOpen, setXlsxOpen] = useState(false)
 
   const exportJSON = async () => {
     setBusy(true)
@@ -76,6 +78,12 @@ export function SettingsPage() {
       </Card>
 
       <Card className="mt-4 p-5">
+        <h2 className="font-bold">엑셀 가져오기</h2>
+        <p className="mt-1 text-sm text-slate-500">다른 가계부 앱에서 내보낸 엑셀(여행 목록 + 여행별 시트)을 올리면 여행과 지출을 한 번에 가져와요. 기존 여행과 겹치면 합치고, 이미 지출이 있는 날짜는 건너뛰어요.</p>
+        <Button className="mt-3" onClick={() => setXlsxOpen(true)}>📄 엑셀 파일 가져오기</Button>
+      </Card>
+
+      <Card className="mt-4 p-5">
         <h2 className="font-bold">환율 재계산</h2>
         <p className="mt-1 text-sm text-slate-500">지출은 각각 저장 시점의 환율로 계산돼 있어요. 모든 지출을 여행의 <b>기본 환율</b> 하나로 다시 맞추고 싶을 때만 눌러주세요 (보통 필요 없음).</p>
         <ul className="mt-3 divide-y divide-slate-100">
@@ -102,7 +110,8 @@ export function SettingsPage() {
           <Button variant="danger" className="mt-3" onClick={logout}>로그아웃</Button>
         </Card>
       )}
-      <p className="mt-6 text-center text-xs text-slate-400">여행 가계부 · v1.0</p>
+      <p className="mt-6 text-center text-xs text-slate-400">여행 가계부 · v1.1</p>
+      {xlsxOpen && <XlsxImportSheet open onClose={() => setXlsxOpen(false)} />}
     </div>
   )
 }

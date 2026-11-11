@@ -1,12 +1,13 @@
 export interface User { id: string; email: string; name: string; picture: string }
 export interface AuthStatus { mode: 'google' | 'pin' | 'none'; required: boolean; googleClientId?: string }
 
-export type ImportSource = 'naverpay' | 'grab_food' | 'grab_ride' | 'bolt' | 'other'
+export type ImportSource = 'naverpay' | 'grab_food' | 'grab_ride' | 'bolt' | 'xlsx' | 'other'
 export const SOURCE_META: Record<ImportSource | 'manual', { label: string; color: string }> = {
   naverpay: { label: 'N Pay', color: '#03c75a' },
   grab_food: { label: 'Grab', color: '#00b14f' },
   grab_ride: { label: 'Grab', color: '#00b14f' },
   bolt: { label: 'Bolt', color: '#34d186' },
+  xlsx: { label: '엑셀', color: '#1f7a4d' },
   other: { label: '가져옴', color: '#64748b' },
   manual: { label: '', color: '' },
 }
