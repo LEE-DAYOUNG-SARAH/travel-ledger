@@ -72,7 +72,7 @@ export async function parseLedgerXlsx(file: File): Promise<XlsxTrip[]> {
 /** 시트 행 → 지출 입력 (여행의 통화 기준) */
 export function rowToExpense(r: XlsxRow, tripId: string, localCurrency: string, baseCurrency: string, tripRate: number): ExpenseInput {
   const isLocal = r.currency === localCurrency && localCurrency !== baseCurrency
-  const memo = (r.prep ? '[준비] ' : '') + r.title
+  const memo = r.title
   if (isLocal) {
     return { tripId, amountLocal: r.amount, amountBase: r.amountKrw, currency: localCurrency, category: r.category, paymentMethod: 'CARD',
       exchangeRate: r.rate, source: 'xlsx', memo, place: r.place, spentAt: `${r.date}T12:00:00` }

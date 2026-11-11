@@ -7,6 +7,10 @@ import { TripForm } from '../components/TripForm'
 import { TripHeader } from '../components/TripHeader'
 import { CATEGORY_META, PAYMENT_META, SOURCE_META, type Expense, type Trip } from '../types'
 import { dateKey, fmtDate, fmtMoney, fmtTime, todayKey, tripDays, dayNumber, tripStatus } from '../lib/format'
+import dayjs from 'dayjs'
+
+const PREP = 'PREP'
+const prevDay = (d: string) => dayjs(d).subtract(1, 'day').format('YYYY-MM-DD')
 
 function ExpenseRow({ e, trip, onClick }: { e: Expense; trip: Trip; onClick: () => void }) {
   const m = CATEGORY_META[e.category]
@@ -62,19 +66,21 @@ export function LedgerPage({ trip }: { trip: Trip }) {
   }, [selected, list])
 
   const all = useMemo(() => [...(list ?? [])].sort((a, b) => a.createdAt.localeCompare(b.createdAt)), [list])
+  // 시작일 이전 지출은 날짜와 무관하게 '여행준비' 한 묶음
+  const keyOf = (e: Expense) => { const k = dateKey(e.spentAt); return k < trip.startDate ? PREP : k }
   const total = all.reduce((s, e) => s + e.amountBase, 0)
   const todayTotal = all.filter((e) => dateKey(e.spentAt) === todayKey()).reduce((s, e) => s + e.amountBase, 0)
-  const visible = selected === 'ALL' ? all : all.filter((e) => dateKey(e.spentAt) === selected)
+  const visible = selected === 'ALL' ? all : all.filter((e) => keyOf(e) === selected)
   const visibleTotal = visible.reduce((s, e) => s + e.amountBase, 0)
   const byDay = useMemo(() => {
     const m = new Map<string, number>()
-    for (const e of all) m.set(dateKey(e.spentAt), (m.get(dateKey(e.spentAt)) ?? 0) + e.amountBase)
+    for (const e of all) m.set(keyOf(e), (m.get(keyOf(e)) ?? 0) + e.amountBase)
     return m
   }, [all])
   // 전체 보기일 때 날짜별 그룹
   const groups = useMemo(() => {
     const g = new Map<string, Expense[]>()
-    for (const e of visible) { const k = dateKey(e.spentAt); g.set(k, [...(g.get(k) ?? []), e]) }
+    for (const e of visible) { const k = keyOf(e); g.set(k, [...(g.get(k) ?? []), e]) }
     return [...g.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1))
   }, [visible])
 
@@ -96,7 +102,8 @@ export function LedgerPage({ trip }: { trip: Trip }) {
   const elapsedDays = status === 'done' ? days.length : Math.max(1, Math.min(days.length, dayNumber(trip.startDate, todayKey())))
   const remainBudget = trip.budget != null ? trip.budget - total : null
   const remainDays = Math.max(0, days.length - elapsedDays)
-  const extraDays = all.map((e) => dateKey(e.spentAt)).filter((d) => !days.includes(d))
+  const hasPrep = byDay.has(PREP)
+  const extraDays = all.map(keyOf).filter((d) => d !== PREP && !days.includes(d))
   const allDays = [...days, ...[...new Set(extraDays)].sort()]
 
   return (
@@ -133,6 +140,7 @@ export function LedgerPage({ trip }: { trip: Trip }) {
           {/* 날짜 탭 */}
           <div ref={tabsRef} className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4 pb-1">
             <DayTab label="전체" sub={fmtMoney(total, trip.baseCurrency, { compact: true })} active={selected === 'ALL'} onClick={() => setSelected('ALL')} />
+            {hasPrep && <DayTab label="여행준비" sub="시작 전" active={selected === PREP} amount={byDay.get(PREP)} onClick={() => setSelected(PREP)} />}
             {allDays.map((d, i) => (
               <DayTab key={d} label={i < days.length ? `Day ${i + 1}` : '기간 외'} sub={fmtDate(d, 'M/D (dd)')} active={selected === d} today={d === todayKey()}
                 amount={byDay.get(d)} onClick={() => setSelected(d)} />
@@ -143,12 +151,12 @@ export function LedgerPage({ trip }: { trip: Trip }) {
           <div className="mt-3">
             {list === undefined && <p className="py-10 text-center text-slate-400">불러오는 중…</p>}
             {list && visible.length === 0 && (
-              <Empty icon="🧾" title={selected === 'ALL' ? '아직 기록이 없어요' : '이 날은 기록이 없어요'} desc="아래 + 버튼으로 첫 지출을 추가해보세요" />
+              <Empty icon="🧾" title={selected === 'ALL' ? '아직 기록이 없어요' : selected === PREP ? '여행준비 기록이 없어요' : '이 날은 기록이 없어요'} desc="아래 + 버튼으로 첫 지출을 추가해보세요" />
             )}
             {groups.map(([day, items]) => (
               <Card key={day} className="mb-3 overflow-hidden">
                 <div className="flex items-center justify-between bg-slate-50/70 px-4 py-2 text-xs font-semibold text-slate-500">
-                  <span>{days.includes(day) ? `Day ${dayNumber(trip.startDate, day)} · ` : ''}{fmtDate(day, 'M월 D일 (dd)')}</span>
+                  <span>{day === PREP ? '여행준비' : `${days.includes(day) ? `Day ${dayNumber(trip.startDate, day)} · ` : ''}${fmtDate(day, 'M월 D일 (dd)')}`}</span>
                   <span className="tnum">{fmtMoney(items.reduce((s, e) => s + e.amountBase, 0), trip.baseCurrency)}</span>
                 </div>
                 <div className="divide-y divide-slate-100">
@@ -157,7 +165,7 @@ export function LedgerPage({ trip }: { trip: Trip }) {
               </Card>
             ))}
             {selected !== 'ALL' && visible.length > 0 && (
-              <p className="tnum px-1 pr-20 text-right text-sm text-slate-500 lg:pr-1">이 날 합계 <b className="text-slate-800">{fmtMoney(visibleTotal, trip.baseCurrency)}</b></p>
+              <p className="tnum px-1 pr-20 text-right text-sm text-slate-500 lg:pr-1">{selected === PREP ? '여행준비' : '이 날'} 합계 <b className="text-slate-800">{fmtMoney(visibleTotal, trip.baseCurrency)}</b></p>
             )}
           </div>
         </div>
@@ -171,7 +179,7 @@ export function LedgerPage({ trip }: { trip: Trip }) {
           await loadExpenses(trip.id); await loadTrips()
           if (n) { setSelected('ALL'); toast(errors.length ? `${n}건 가져왔어요 · ${errors.length}건 실패` : `${n}건 가져왔어요`, errors.length ? 'err' : 'ok') }
         }} />}
-      {adding && <ExpenseForm trip={trip} open onClose={() => setAdding(false)} defaultDate={selected === 'ALL' ? (status === 'ongoing' ? todayKey() : trip.startDate) : selected} onSubmit={createExpense} />}
+      {adding && <ExpenseForm trip={trip} open onClose={() => setAdding(false)} defaultDate={selected === 'ALL' ? (status === 'ongoing' ? todayKey() : trip.startDate) : selected === PREP ? prevDay(trip.startDate) : selected} onSubmit={createExpense} />}
       {editing && <ExpenseForm trip={trip} open initial={editing} onClose={() => setEditing(null)}
         onSubmit={(e) => updateExpense(editing.id, e)} onDelete={() => deleteExpense(trip.id, editing.id)} />}
       {editTrip && <TripForm open initial={trip} onClose={() => setEditTrip(false)} onSubmit={async (t) => { if (await updateTrip(trip.id, t)) setEditTrip(false) }} />}
